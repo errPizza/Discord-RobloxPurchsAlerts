@@ -237,7 +237,41 @@ async fetch(request, env) {
 
 }
 
-		let avatarUrl = null;
+    let avatarUrl = null;
+
+if (
+	data.userId &&
+	!isStats
+) {
+
+	try {
+
+		const thumbnailResponse =
+			await fetch(
+				`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${data.userId}&size=420x420&format=Png&isCircular=false`
+			);
+
+		if (thumbnailResponse.ok) {
+
+			const thumbnailData =
+				await thumbnailResponse.json();
+
+			avatarUrl =
+				thumbnailData.data?.[0]?.imageUrl ?? null;
+
+		}
+
+	}
+	catch (err) {
+
+		console.error(
+			"[THUMBNAIL]",
+			err
+		);
+
+	}
+
+}
 
     if (isStats) {
 
