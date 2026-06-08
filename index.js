@@ -252,131 +252,103 @@ async fetch(request, env) {
 
 }
 
-		if (
-			data.userId &&
-			!isMonthly
-		) {
+	if (isDonation) {
 
-			try {
+		let color = 0x57F287;
 
-				const thumbnailResponse =
-					await fetch(
-						`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${data.userId}&size=420x420&format=Png&isCircular=false`
-					);
+		const revenue =
+			Math.floor(
+				Number(data.amount) * 0.70
+			);
 
-				const thumbnailData =
-					await thumbnailResponse.json();
+		discordPayload = {
 
-				avatarUrl =
-					thumbnailData.data?.[0]?.imageUrl;
+			embeds: [
 
-			}
-			catch {
+				{
 
-			}
+					title:
+						data.isStudio
+						? "<a:ping:1398387011366158356> Donación Simulada"
+						: "<a:Giveaway:1398387060624199750> Nueva Donación Verificada <:Verificado:1441221673540911196>",
 
-		}
+					description:
+						`**${data.displayName}** realizó una donación. <:miau:1407114825791705210>`,
 
-		let discordPayload;
-		let webhookUrl;
+					color,
 
-		if (isDonation) {
+					author: {
 
-			let color = 0x57F287;
+						name: `Comprador: ${data.displayName} (@${data.username})`,
+						icon_url: avatarUrl
 
-			const revenue =
-				Math.floor(
-					Number(data.amount) * 0.70
-				);
+					},
 
-			discordPayload = {
+					thumbnail: {
+						url: avatarUrl
+					},
 
-				embeds: [
+					fields: [
 
-					{
-
-						title:
-							data.isStudio
-							? "<a:ping:1398387011366158356> Donación Simulada"
-							: "<a:Giveaway:1398387060624199750> Nueva Donación Verificada <:Verificado:1441221673540911196>",
-
-						description:
-							`**${data.displayName}** realizó una donación. <:miau:1407114825791705210>`,
-
-						color,
-
-						author: {
-
-							name: `Comprador: ${data.displayName} (@${data.username})`,
-							icon_url: avatarUrl
-
+						{
+							name:
+								"<:Member:1421793084349485116> Display Name",
+							value:
+								String(data.displayName),
+							inline:
+								true
 						},
 
-						thumbnail: {
-							url: avatarUrl
+						{
+							name:
+								"<:Member:1421793084349485116> Username",
+							value:
+								String(data.username),
+							inline:
+								true
 						},
 
-						fields: [
+						{
+							name:
+								"<:headstaff:1421793573640212572> UserId",
+							value:
+								String(data.userId),
+							inline:
+								true
+						},
 
-							{
-								name:
-									"<:Member:1421793084349485116> Display Name",
-								value:
-									String(data.displayName),
-								inline:
-									true
-							},
+						{
+							name:
+								"Donación",
+							value:
+								`${Number(data.amount).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
+							inline:
+								false
+						},
 
-							{
-								name:
-									"<:Member:1421793084349485116> Username",
-								value:
-									String(data.username),
-								inline:
-									true
-							},
-
-							{
-								name:
-									"<:headstaff:1421793573640212572> UserId",
-								value:
-									String(data.userId),
-								inline:
-									true
-							},
-
-							{
-								name:
-									"Donación",
-								value:
-									`${Number(data.amount).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
-								inline:
-									false
-							},
-
-							{
-								name:
-									"Ganancia 👻",
-								value:
-									`${revenue.toLocaleString()} <:RobuxIcon:1513312643073573028> [ 70% ]`,
-								inline:
-									false
+						{
+							name:
+								"Ganancia 👻",
+							value:
+								`${revenue.toLocaleString()} <:RobuxIcon:1513312643073573028> [ 70% ]`,
+							inline:
+								false
 							}
 
 						],
 
-						footer: {
+					footer: {
 
-							text:
-								data.isStudio
-								? "Studio Simulation"
-								: "Donation Alert"
+						text:
+							data.isStudio
+							? "Studio Simulation"
+							: "Donation Alert"
 
 						},
 
-						timestamp:
-							new Date()
-							.toISOString()
+					timestamp:
+						new Date()
+						.toISOString()
 
 					}
 
