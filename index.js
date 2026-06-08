@@ -252,6 +252,9 @@ async fetch(request, env) {
 
 }
 
+	let discordPayload;
+	let webhookUrl;
+
 	if (isDonation) {
 
 		let color = 0x57F287;
@@ -333,9 +336,9 @@ async fetch(request, env) {
 								`${revenue.toLocaleString()} <:RobuxIcon:1513312643073573028> [ 70% ]`,
 							inline:
 								false
-							}
+						}
 
-						],
+					],
 
 					footer: {
 
@@ -344,20 +347,20 @@ async fetch(request, env) {
 							? "Studio Simulation"
 							: "Donation Alert"
 
-						},
+					},
 
 					timestamp:
 						new Date()
 						.toISOString()
 
-					}
+				}
 
-				]
+			]
 
-			};
+		};
 
-			webhookUrl =
-				env.DONATION_WEBHOOK;
+		webhookUrl =
+			env.DONATION_WEBHOOK;
 
 		}
 
