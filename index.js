@@ -175,6 +175,37 @@ async fetch(request, env) {
 
 	}
 
+const weekKey = getWeekKey();
+
+let donationNumber = 1;
+
+try {
+
+	const rawStats =
+		await env.WEEKLY_STATS.get(
+			weekKey
+		);
+
+	if (rawStats) {
+
+		const stats =
+			JSON.parse(rawStats);
+
+		donationNumber =
+			(stats.donations || 0) + 1;
+
+	}
+
+}
+catch (err) {
+
+	console.error(
+		"[DONATION COUNT]",
+		err
+	);
+
+}
+
 	try {
 
 		const url =
@@ -293,105 +324,122 @@ if (
 
 		let color = 0x57F287;
 
-		const revenue =
-			Math.floor(
-				Number(data.amount) * 0.70
-			);
+		const revenue = Math.floor(
+			Number(data.amount) * 0.70
+		);
 
-		discordPayload = {
+	discordPayload = {
 
-			embeds: [
+		content:
+     	   `# ¡Nueva Donación Recibida!
+     	   Se ha detectado una nueva compra en **🛍 Lacywings Outfits!**
+      	   -# Eso eso >:). Sigan donando.`,
 
-				{
+		embeds: [
 
-					title:
-						data.isStudio
-						? "<a:ping:1398387011366158356> Donación Simulada"
-						: "<a:Giveaway:1398387060624199750> Nueva Donación Verificada <:Verificado:1441221673540911196>",
+			{
 
-					description:
-						`**${data.displayName}** realizó una donación. <:miau:1407114825791705210>`,
+				title: data.isStudio
+					? "<a:ping:1398387011366158356> Donación Simulada"
+				    : "Compra Individual Verificada <:Verificado:1441221673540911196>",
 
-					color,
+				description: `Información del Player:`,
 
-					author: {
+				color: 0x99FF00,
 
-						name: `Comprador: ${data.displayName} (@${data.username})`,
-						icon_url: avatarUrl
+				author: {
 
-					},
+					name: `${data.displayName} (@${data.username})`,
 
-					thumbnail: {
-						url: avatarUrl
-					},
+					icon_url: avatarUrl
 
-					fields: [
+				},
 
-						{
-							name:
-								"<:Member:1421793084349485116> Display Name",
-							value:
-								String(data.displayName),
-							inline:
-								true
-						},
+				thumbnail: {
 
-						{
-							name:
-								"<:Member:1421793084349485116> Username",
-							value:
-								String(data.username),
-							inline:
-								true
-						},
+					url: "https://cdn.discordapp.com/attachments/1416335365719199794/1515193160609828985/IMG_6139.jpg?ex=6a2e1d18&is=6a2ccb98&hm=b397336afb96af07eb37e1dd0b5f97e7e4c0c93e1339d80904b6c52179be82b6&"
 
-						{
-							name:
-								"<:headstaff:1421793573640212572> UserId",
-							value:
-								String(data.userId),
-							inline:
-								true
-						},
+				},
 
-						{
-							name:
-								"Donación",
-							value:
-								`${Number(data.amount).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
-							inline:
-								false
-						},
+				image: {
 
-						{
-							name:
-								"Ganancia 👻",
-							value:
-								`${revenue.toLocaleString()} <:RobuxIcon:1513312643073573028> [ 70% ]`,
-							inline:
-								false
-						}
+					url: "https://cdn.discordapp.com/attachments/1446777790740430858/1513638110758572102/IMG_6138.jpg?ex=6a2dbad7&is=6a2c6957&hm=ac472fb181a1a329394c87b85cd4b12cdc28b251989f25bb539b9d52caf5c79b&"
 
-					],
+				},
 
-					footer: {
+				fields: [
 
-						text:
-							data.isStudio
-							? "Studio Simulation"
-							: "Donation Alert"
+					{
+
+						name: "<:Member:1421793084349485116> Display Name",
+
+						value: String(
+							data.displayName
+						),
+
+						inline: true
 
 					},
 
-					timestamp:
-						new Date()
-						.toISOString()
+					{
 
-				}
+						name: "<:Member:1421793084349485116> Username",
 
-			]
+						value: String(
+							data.username
+						),
 
-		};
+						inline: true
+
+					},
+
+					{
+
+						name: "<:headstaff:1421793573640212572> UserId",
+
+						value:String(
+							data.userId
+						),
+	
+						inline: true
+
+					},
+
+					{
+
+						name: "<:gifter:1438158241908396203> Donación",
+
+						value: `${Number(data.amount).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
+
+						inline: true
+
+					},
+
+					{
+
+						name: "👻 Ganancia",
+
+						value: `${revenue.toLocaleString()} <:RobuxIcon:1513312643073573028>`,
+
+						inline:	true
+
+					}
+
+				],
+
+				footer: {
+
+					text: `Esta es la donación número ${donationNumber} de esta semana :D`
+
+				},
+
+				timestamp: new Date().toISOString()
+
+			}
+
+		]
+		
+    };
 
 		webhookUrl =
 			env.DONATION_WEBHOOK;
