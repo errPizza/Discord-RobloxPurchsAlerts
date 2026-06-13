@@ -7,7 +7,7 @@
 > .[!WARNING].
 > Actualiza solo si sabes lo que estas haciendo. Esto esta conectado a Cloudflare a un sistena de Webhooks de Discord con una base de datos.
 
-> .[!IMPORTANT].
+> [!IMPORTANT]
 > Los servidores estan activos 24/7, si un error aparece, arreglalo lo mas rapido posible
 
 > .[!TIP].
