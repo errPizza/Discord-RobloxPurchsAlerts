@@ -724,10 +724,17 @@ async scheduled(event, env, ctx) {
 
             {
 
-                title:
-                    "<:headdeveloper:1421793561187319848> Resumen Semanal de Ganancias",
+                title: "<:headdeveloper:1421793561187319848> Resumen Semanal de Ganancias",
 
-                color: 0x2ECC71,
+                color: 0xffff00,
+
+				thumbnail: {
+   					url: "https://cdn.discordapp.com/attachments/1416335365719199794/1515193160609828985/IMG_6139.jpg?ex=6a428c58&is=6a413ad8&hm=63963e17060cc45239269457c57326a947f327f3d645badf03d02044b8ca1976&"
+				},
+
+			    image: {
+    				url: "https://cdn.discordapp.com/attachments/1446777790740430858/1513638110758572102/IMG_6138.jpg?ex=6a42d2d7&is=6a418157&hm=6803c02a386bb95b911805ce9fb9fe0bf4ee19b7ff912630684c5d0c85f40a3a&"
+				},
 
                 fields: [
 
@@ -771,12 +778,8 @@ async scheduled(event, env, ctx) {
 
                 ],
 
-                footer: {
-                    text: "Weekly Revenue Report"
-                },
-
-                timestamp:
-                    new Date().toISOString()
+                footer: {text: "Informe de ingresos semanales"},
+                timestamp: new Date().toISOString()
 
             }
 
