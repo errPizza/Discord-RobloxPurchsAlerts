@@ -297,9 +297,9 @@ export default {
 			Number(data.amount) * 0.70
 		);
 
-	discordPayload = {
+	    discordPayload = {
 
-		content: `# ¡Nueva Donación Recibida!\nSe ha detectado una nueva donación en **🛍 Lacywings Outfits!**\n-# Eso eso >:). Sigan donando.`,
+		content: `# ¡Nueva Donación Recibida!\nSe ha detectado una nueva donación en **🛍 Lacywings Outfits!**\n-# Eso eso >:). Sigan donando.\n`,
 
 		embeds: [
 
@@ -407,18 +407,51 @@ export default {
 		
     };
 
-		webhookUrl =
-			env.DONATION_WEBHOOK;
+		webhookUrl =env.DONATION_WEBHOOK;
 
-		}
+	}
 
 		else if (isSingle) {
+
+			let itemImage = null;
+
+			try {
+
+				let thumbnailUrl;
+
+				if (item.AssetType === "Bundle") {
+			
+					thumbnailUrl = `https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=${item.id}&size=420x420&format=Png&isCircular=false`;
+			
+				} else {
+
+					thumbnailUrl = `https://thumbnails.roblox.com/v1/assets-thumbnail?assetIds=${item.id}&size=420x420&format=Png&isCircular=false`;
+
+				}
+
+				const thumbnailResponse = await fetch(thumbnailUrl);
+
+				if (thumbnailResponse.ok) {
+
+					const thumbnailData = await thumbnailResponse.json();
+
+					itemImage = thumbnailData.data?.[0]?.imageUrl ?? null;
+
+				}
+
+			}
+			
+			catch (err) {
+
+				console.error("[ITEM THUMBNAIL]", err);
+
+			}
 
 			const item = data.item;
 
 			discordPayload = {
 
-				content: `# ¡Nueva Donación Recibida!\nSe ha detectado una nueva compra en **🛍 Lacywings Outfits!**\n-# Eso eso >:). Sigan comprando.`,
+				content: `# ¡Nueva Compra Recibida!\nSe ha detectado una nueva compra en **🛍 Lacywings Outfits!**\n-# Eso eso >:). Sigan comprando.\n`,
 
 				description: "Información de la compra:",
 
@@ -426,27 +459,21 @@ export default {
 
 					{
 
-						title:
-							data.isStudio
-							? "<a:ping:1398387011366158356> Compra Individual Simulada"
-							: "Compra Individual Verificada <:Verificado:1441221673540911196>",
+						title:data.isStudio ? "<a:ping:1398387011366158356> Compra Individual Simulada" : "Compra Individual Verificada <:Verificado:1441221673540911196>",
 
-						color:
-							0x5865F2,
+						color: 0x00ffcc,
 
 						author: {
 
-							name:
-								`Comprador: ${data.displayName} (@${data.username})`,
+							name: `Comprador: ${data.displayName} (@${data.username})`,
 
-							icon_url:
-								avatarUrl
+							icon_url: avatarUrl
 
 						},
 
 						thumbnail: {
-							url: item.image
-						},
+	                        url: itemImage
+                        },
 
 						image: {
 	                        url: "https://cdn.discordapp.com/attachments/1446777790740430858/1513638110758572102/IMG_6138.jpg?ex=6a42d2d7&is=6a418157&hm=6803c02a386bb95b911805ce9fb9fe0bf4ee19b7ff912630684c5d0c85f40a3a&"

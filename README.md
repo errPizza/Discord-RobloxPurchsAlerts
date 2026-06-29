@@ -8,7 +8,7 @@ Para saber que pedo con las comisiones y demas, tambien tiene stats semanales :D
 > Cuidado pequeño niño, cuando hice este codigo solo dios y yo sabiamos como funcionaba. Ahora ¡SOLO DIOS SABE!
 
 > [!WARNING]
-> Actualiza solo si sabes lo que estas haciendo. Esto esta conectado a Cloudflare a un sistena de Webhooks de Discord con una base de datos.
+> Actualiza solo si sabes lo que estas haciendo. Esto esta conectado a Cloudflare con un sistema de Webhooks - Discord con una base de datos.
 
 > [!IMPORTANT]
 > Los servidores estan activos 24/7, si un error aparece, arreglalo lo mas rapido posible
