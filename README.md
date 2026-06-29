@@ -1,3 +1,6 @@
+# ALERTAS DE COMPRA ( ROBLOX -> DISCORD )
+Para saber que pedo con las comisiones y demas, tambien tiene stats semanales :D
+
 > [!NOTE]
 > Ultima actualizacion [ 08/06/2026 ] | ( 10.5~horas de trabajo )
 

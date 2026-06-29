@@ -24,27 +24,22 @@ function getWeekKey() {
 	return `${now.getUTCFullYear()}-W${week}`;
 }
 
-async function updateWeeklyStats(
-	env,
-	payload
-) {
+async function updateWeeklyStats(env,payload) {
 
 	const weekKey = getWeekKey();
 
-	const raw =
-		await env.WEEKLY_STATS.get(
-			weekKey
-		);
+	const raw =await env.WEEKLY_STATS.get(
+		weekKey
+	);
 
 	let stats;
 
 	try {
 
-		stats = raw
-			? JSON.parse(raw)
-			: null;
+		stats = raw ? JSON.parse(raw) : null;
 
 	}
+
 	catch (err) {
 
 		console.error(
@@ -74,75 +69,52 @@ async function updateWeeklyStats(
 
 	}
 
-	if (
-		payload.type ===
-		"Donation"
-	) {
+	if (payload.type === "Donation") {
 
-		const amount =
-			Number(payload.amount) || 0;
+		const amount = Number(payload.amount) || 0;
 
 		stats.spent += amount;
 
-		stats.revenue +=
-			Math.floor(
-				amount * 0.70
-			);
+		stats.revenue +=Math.floor(
+			amount * 0.70
+		);
 
 		stats.donations++;
 
 	}
 
-	else if (
-		payload.type ===
-		"Single"
-	) {
+	else if (payload.type ==="Single") {
 
-		const price =
-			Number(payload.price) || 0;
+		const price =Number(payload.price) || 0;
 
-		const percent =
-			payload.creatorId === MY_CREATOR_ID
-				? 0.70
-				: 0.40;
+		const percent =payload.creatorId === MY_CREATOR_ID ? 0.70 : 0.40;
 
 		stats.spent += price;
 
-		stats.revenue +=
-			Math.floor(
-				price * percent
-			);
+		stats.revenue +=Math.floor(
+			price * percent
+		);
 
 		stats.single++;
 
 	}
 
-	else if (
-		payload.type ===
-		"Bulk"
-	) {
+	else if (payload.type ==="Bulk") {
 
 		let spent = 0;
 		let revenue = 0;
 
-		for (
-			const item of payload.items
-		) {
+		for (const item of payload.items) {
 
-			const price =
-				Number(item.price) || 0;
+			const price = Number(item.price) || 0;
 
 			spent += price;
 
-			revenue +=
-				Math.floor(
-					price *
-					(
-						item.creatorId === MY_CREATOR_ID
-							? 0.70
-							: 0.40
-					)
-				);
+			revenue +=Math.floor(price *
+				(
+					item.creatorId === MY_CREATOR_ID ? 0.70 : 0.40
+				)
+			);
 
 		}
 
@@ -162,49 +134,49 @@ async function updateWeeklyStats(
 
 export default {
 
-async fetch(request, env) {
+	async fetch(request, env) {
 
-	if (request.method !== "POST") {
+		if (request.method !== "POST") {
 
-		return new Response(
-			"Method Not Allowed",
-			{
-				status: 405
-			}
-		);
+			return new Response(
+				"Method Not Allowed",
+				{
+					status: 405
+				}
+			);
 
-	}
+		}
 
-const weekKey = getWeekKey();
+	const weekKey = getWeekKey();
 
-let donationNumber = 1;
+	let donationNumber = 1;
+	let singleNumber   = 1;
 
-try {
+	try {
 
-	const rawStats =
-		await env.WEEKLY_STATS.get(
+		const rawStats =await env.WEEKLY_STATS.get(
 			weekKey
 		);
 
-	if (rawStats) {
+		if (rawStats) {
 
-		const stats =
-			JSON.parse(rawStats);
+			const stats = JSON.parse(rawStats);
 
-		donationNumber =
-			(stats.donations || 0) + 1;
+			donationNumber = (stats.donations || 0) + 1;
+			singleNumber   = (stats.single || 0) + 1;
+
+		}
 
 	}
 
-}
-catch (err) {
+	catch (err) {
 
-	console.error(
-		"[DONATION COUNT]",
-		err
-	);
+		console.error(
+			"[DONATION COUNT]",
+			err
+		);
 
-}
+	}
 
 	try {
 
@@ -266,14 +238,11 @@ catch (err) {
 		}
 	);
 
-}
+	}
 
     let avatarUrl = null;
 
-if (
-	data.userId &&
-	!isStats
-) {
+	if (data.userId &&!isStats) {
 
 	try {
 
@@ -302,7 +271,7 @@ if (
 
 	}
 
-}
+	}
 
     if (isStats) {
 
@@ -315,7 +284,7 @@ if (
 		success: true
 	});
 
-}
+	}
 
 	let discordPayload;
 	let webhookUrl;
@@ -330,10 +299,7 @@ if (
 
 	discordPayload = {
 
-		content:
-     	   `# ¡Nueva Donación Recibida!
-     	   Se ha detectado una nueva compra en **🛍 Lacywings Outfits!**
-      	   -# Eso eso >:). Sigan donando.`,
+		content: `# ¡Nueva Donación Recibida!\nSe ha detectado una nueva donación en **🛍 Lacywings Outfits!**\n-# Eso eso >:). Sigan donando.`,
 
 		embeds: [
 
@@ -448,10 +414,13 @@ if (
 
 		else if (isSingle) {
 
-			const item =
-				data.item;
+			const item = data.item;
 
 			discordPayload = {
+
+				content: `# ¡Nueva Donación Recibida!\nSe ha detectado una nueva compra en **🛍 Lacywings Outfits!**\n-# Eso eso >:). Sigan comprando.`,
+
+				description: "Información de la compra:",
 
 				embeds: [
 
@@ -479,50 +448,40 @@ if (
 							url: item.image
 						},
 
+						image: {
+	                        url: "https://cdn.discordapp.com/attachments/1446777790740430858/1513638110758572102/IMG_6138.jpg?ex=6a42d2d7&is=6a418157&hm=6803c02a386bb95b911805ce9fb9fe0bf4ee19b7ff912630684c5d0c85f40a3a&"
+                        },
+
 						fields: [
 
-							{
-								name:
-									"<a:FakeNitroEmoji:1397199158393180250> Item",
-								value:
-									item.name,
-								inline:
-									true
-							},
+                           	{
+                   	        	name: "<a:FakeNitroEmoji:1397199158393180250> Item",
+	                           	value: item.name,
+	                           	inline: true
+                           	},
 
-							{
-								name:
-									"💳 Precio",
-								value:
-									`${Number(item.price).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
-								inline:
-									true
-							},
+                           	{
+	                           	name: "<:headstaff:1421793573640212572> AssetId",
+	                           	value: String(item.id),
+	                           	inline: true
+                           	},
 
-							{
-								name:
-									"💰 Ganancia",
-								value:
-									`${Number(item.revenue || 0).toLocaleString()} <:RobuxIcon:1513312643073573028> [ ${Math.floor((item.percent || 0) * 100)}% ]`,
-								inline:
-									true
-							},
+                           	{
+                           		name: "💳 Precio",
+                           		value: `${Number(item.price).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
+                           		inline: true
+                           	},
 
-							{
-								name:
-									"<:headstaff:1421793573640212572> AssetId",
-								value:
-									String(
-										item.id
-									),
-								inline:
-									true
-							}
+                           	{
+	                           	name: "💰 Ganancia",
+	                           	value: `${Number(item.revenue || 0).toLocaleString()} <:RobuxIcon:1513312643073573028> [ ${Math.floor((item.percent || 0) * 100)}% ]`,
+	                           	inline: true
+                           	}
 
-						],
+                        ],
 
-						timestamp:
-							new Date().toISOString()
+						footer: {text: `Esta es la compra número ${singleNumber} de esta semana :D`},
+						timestamp: new Date().toISOString()
 
 					}
 
@@ -530,8 +489,7 @@ if (
 
 			};
 
-			webhookUrl =
-				env.SINGLE_ITEM_WEBHOOK;
+			webhookUrl = env.SINGLE_ITEM_WEBHOOK;
 
 		}
 
@@ -717,20 +675,17 @@ if (
 
 async scheduled(event, env, ctx) {
 
-    const weekKey =
-        getPreviousWeekKey();
+    const weekKey = getPreviousWeekKey();
 
-    const raw =
-        await env.WEEKLY_STATS.get(
-            weekKey
-        );
+    const raw = await env.WEEKLY_STATS.get(
+         weekKey
+    );
 
     if (!raw) {
         return;
     }
 
-    const data =
-        JSON.parse(raw);
+    const data = JSON.parse(raw);
 
     const discordPayload = {
 
