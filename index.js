@@ -1,34 +1,44 @@
 const MY_CREATOR_ID = 802409113;
 
-function getWeekKey() {
+function getWeekKey(date = new Date()) {
 
-	const now = new Date();
+    const start = new Date(
+        Date.UTC(
+            date.getUTCFullYear(),
+            0,
+            1
+        )
+    );
 
-	const start = new Date(
-		Date.UTC(
-			now.getUTCFullYear(),
-			0,
-			1
-		)
-	);
+    const day = Math.floor(
+        (date - start) / 86400000
+    );
 
-	const day = Math.floor(
-		(now - start) / 86400000
-	);
+    const week = Math.ceil(
+        (day + start.getUTCDay() + 1) / 7
+    );
 
-	const week = Math.ceil(
-		(day + start.getUTCDay() + 1)
-		/ 7
-	);
+    return `${date.getUTCFullYear()}-W${week}`;
 
-	return `${now.getUTCFullYear()}-W${week}`;
+}
+
+function normalizePrice(price, isPlusPlayer) {
+
+    price = Number(price) || 0;
+
+    if (isPlusPlayer && price >= 10) {
+        return Math.round(price / 0.90);
+    }
+
+    return price;
+
 }
 
 async function updateWeeklyStats(env,payload) {
 
 	const weekKey = getWeekKey();
 
-	const raw =await env.WEEKLY_STATS.get(
+	const raw = await env.WEEKLY_STATS.get(
 		weekKey
 	);
 
@@ -83,9 +93,12 @@ async function updateWeeklyStats(env,payload) {
 
 	}
 
-	else if (payload.type ==="Single") {
+	else if (payload.type === "Single") {
 
-		const price =Number(payload.price) || 0;
+		const price = normalizePrice(
+   		    payload.price,
+   		    payload.isPlusPlayer
+		);
 
 		const percent =payload.creatorId === MY_CREATOR_ID ? 0.70 : 0.40;
 
@@ -99,14 +112,17 @@ async function updateWeeklyStats(env,payload) {
 
 	}
 
-	else if (payload.type ==="Bulk") {
+	else if (payload.type === "Bulk") {
 
 		let spent = 0;
 		let revenue = 0;
 
 		for (const item of payload.items) {
 
-			const price = Number(item.price) || 0;
+			const price = normalizePrice(
+   		        payload.price,
+   		        payload.isPlusPlayer
+		    );
 
 			spent += price;
 
@@ -151,10 +167,11 @@ export default {
 
 	let donationNumber = 1;
 	let singleNumber   = 1;
+	let bulkNumber     = 1;
 
 	try {
 
-		const rawStats =await env.WEEKLY_STATS.get(
+		const rawStats = await env.WEEKLY_STATS.get(
 			weekKey
 		);
 
@@ -164,6 +181,7 @@ export default {
 
 			donationNumber = (stats.donations || 0) + 1;
 			singleNumber   = (stats.single || 0) + 1;
+			bulkNumber     = (stats.bulk || 0) + 1;
 
 		}
 
@@ -246,22 +264,20 @@ export default {
 
 	try {
 
-		const thumbnailResponse =
-			await fetch(
-				`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${data.userId}&size=420x420&format=Png&isCircular=false`
-			);
+		const thumbnailResponse =await fetch(
+			`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${data.userId}&size=420x420&format=Png&isCircular=false`
+		);
 
 		if (thumbnailResponse.ok) {
 
-			const thumbnailData =
-				await thumbnailResponse.json();
+			const thumbnailData = await thumbnailResponse.json();
 
-			avatarUrl =
-				thumbnailData.data?.[0]?.imageUrl ?? null;
+			avatarUrl = thumbnailData.data?.[0]?.imageUrl ?? null;
 
 		}
 
 	}
+
 	catch (err) {
 
 		console.error(
@@ -305,9 +321,7 @@ export default {
 
 			{
 
-				title: data.isStudio
-					? "<a:ping:1398387011366158356> Donación Simulada"
-				    : "Compra Individual Verificada <:Verificado:1441221673540911196>",
+				title: data.isStudio ? "<a:ping:1398387011366158356> Donación Simulada" : "Compra Individual Verificada <:Verificado:1441221673540911196>",
 
 				description: `Información del Player:`,
 
@@ -413,6 +427,8 @@ export default {
 
 		else if (isSingle) {
 
+			const item = data.item;
+
 			let itemImage = null;
 
 			try {
@@ -440,29 +456,25 @@ export default {
 				}
 
 			}
-			
+
 			catch (err) {
 
 				console.error("[ITEM THUMBNAIL]", err);
 
 			}
 
-			const item = data.item;
-
 			discordPayload = {
 
 				content: `# ¡Nueva Compra Recibida!\nSe ha detectado una nueva compra en **🛍 Lacywings Outfits!**\n-# Eso eso >:). Sigan comprando.\n`,
 
-				description: "Información de la compra:",
-
 				embeds: [
 
 					{
-
+                        
 						title:data.isStudio ? "<a:ping:1398387011366158356> Compra Individual Simulada" : "Compra Individual Verificada <:Verificado:1441221673540911196>",
 
 						color: 0x00ffcc,
-
+                        
 						author: {
 
 							name: `Comprador: ${data.displayName} (@${data.username})`,
@@ -470,6 +482,8 @@ export default {
 							icon_url: avatarUrl
 
 						},
+
+                        description: "Información de la compra:",
 
 						thumbnail: {
 	                        url: itemImage
@@ -537,68 +551,57 @@ export default {
 
 					{
 
-						title:
-							data.isStudio
-							? "<a:ping:1398387011366158356> Compra Bulk Simulada"
-							: "Compra Bulk Verificada <:Verificado:1441221673540911196>",
+						title:data.isStudio ? "<a:ping:1398387011366158356> Compra Bulk Simulada" : "Compra Bulk Verificada <:Verificado:1441221673540911196>",
 
-						color:
-							0xFEE75C,
+						color: 0xFEE75C,
+
+                        description: "Información de la compra Bulk:",
 
 						author: {
 
-							name:
-								`Comprador: ${data.displayName} (@${data.username})`,
+							name: `Comprador: ${data.displayName} (@${data.username})`,
 
-							icon_url:
-								avatarUrl
+							icon_url: avatarUrl
 
+						},
+
+						thumbnail: {
+   						    url: "https://cdn.discordapp.com/attachments/1416335365719199794/1515193160609828985/IMG_6139.jpg?ex=6a428c58&is=6a413ad8&hm=63963e17060cc45239269457c57326a947f327f3d645badf03d02044b8ca1976&"
+						},
+
+						image: {
+    						url: "https://cdn.discordapp.com/attachments/1446777790740430858/1513638110758572102/IMG_6138.jpg?ex=6a42d2d7&is=6a418157&hm=6803c02a386bb95b911805ce9fb9fe0bf4ee19b7ff912630684c5d0c85f40a3a&"
 						},
 
 						fields: [
 
-							{
-								name:
-									"🛒 Cantidad de Items",
-								value:
-									String(
-										data.itemCount
-									),
-								inline:
-									true
-							},
+    					{
+    						name: "🛒 Cantidad de Items",
+    						value: String(data.itemCount),
+    						inline: true
+   						},
 
-							{
-								name:
-									"<:RobuxIcon:1513312643073573028> Total Gastado",
-								value:
-									`${Number(data.totalRobux).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
-								inline:
-									true
-							},
+   						{
+    						name: "<:RobuxIcon:1513312643073573028> Total Gastado",
+    						value: `${Number(data.totalRobux).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
+    						inline: true
+  						},
 
-							{
-								name:
-									"💰 Ganancia Total",
-								value:
-									`${Number(data.totalRevenue || 0).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
-								inline:
-									true
-							},
+   						{
+    						name: "💰 Ganancia Total",
+     						value: `${Number(data.totalRevenue).toLocaleString()} <:RobuxIcon:1513312643073573028>`,
+     						inline: true
+   						},
 
-							{
-								name:
-									"Items Comprados",
-								value:
-									itemsText ||
-									"Sin items"
-							}
+   						{
+     						name: "Items Comprados",
+      						value: itemsText || "Sin items"
+   						}
 
 						],
 
-						timestamp:
-							new Date()
-							.toISOString()
+						footer: {text: `Esta es la compra número ${bulkNumber} de esta semana :D`},
+						timestamp: new Date().toISOString()
 
 					}
 
@@ -606,8 +609,7 @@ export default {
 
 			};
 
-			webhookUrl =
-				env.BULK_ITEMS_WEBHOOK;
+			webhookUrl = env.BULK_ITEMS_WEBHOOK;
 
 		}
 
@@ -678,18 +680,17 @@ export default {
 
 				success: false,
 
-				error:
-					err.toString()
+				error: err.toString()
 
 			}),
+
 			{
 
 				status: 500,
 
 				headers: {
 
-					"Content-Type":
-						"application/json"
+					"Content-Type": "application/json"
 
 				}
 
@@ -702,7 +703,10 @@ export default {
 
 async scheduled(event, env, ctx) {
 
-    const weekKey = getPreviousWeekKey();
+    const lastWeek = new Date();
+    lastWeek.setUTCDate(lastWeek.getUTCDate() - 7);
+
+    const weekKey = getWeekKey(lastWeek);
 
     const raw = await env.WEEKLY_STATS.get(
          weekKey
