@@ -11,7 +11,7 @@ function getWeekKey(date = new Date()) {
     );
 
     const day = Math.floor(
-        (date - start) / 86400000
+        (date.valueOf() - start.valueOf()) / 86400000
     );
 
     const week = Math.ceil(
