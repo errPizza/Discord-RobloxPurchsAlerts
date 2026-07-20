@@ -3,7 +3,8 @@ import { handleAuth } from "./routes/auth.js";
 import { handlePublicWebhook } from "./routes/public.js";
 import { getWeekKey } from "./services/stats.js";
 import { sendDiscord, weeklySummary } from "./services/discord.js";
-import { getWeeklyStats } from "./database/database.js";
+import { getPublicSite, getWeeklyStats } from "./database/database.js";
+import { getWorkerEnabled } from "./database/database.js";
 import { json } from "./utils/response.js";
 
 export default {
@@ -18,7 +19,14 @@ export default {
 
       if (pathname.startsWith("/api/admin/")) return handleAdmin(request, env, pathname);
 
-      if (request.method === "GET" && pathname === "/") return json({ name: "Another Game More API", status: "online" });
+      if (request.method === "GET" && pathname === "/api/site") return json(await getPublicSite(env));
+
+      if (request.method === "GET" && pathname === "/") {
+
+        const enabled = await getWorkerEnabled(env);
+
+        return json({ name: "Another Game More API", status: enabled ? "online" : "paused", messagesEnabled: enabled });
+      }
 
       return handlePublicWebhook(request, env, pathname);
 
@@ -31,6 +39,8 @@ export default {
   },
 
   async scheduled(event, env) {
+
+    if (!(await getWorkerEnabled(env))) return;
 
     const lastWeek = new Date();
 

@@ -1,5 +1,5 @@
-name = "prchsalerts-api"
-main = "worker/index.js"
+name = "prchsalerts"
+main = "index.js"
 compatibility_date = "2025-06-07"
 
 [observability]
@@ -21,7 +21,11 @@ head_sampling_rate = 1
 binding = "DB"
 database_name = "another-game-more"
 database_id = "12fff928-a2c4-4b29-83ae-021b9621dac1"
-migrations_dir = "worker/database/migrations"
+migrations_dir = "database/migrations"
+
+[[kv_namespaces]]
+binding = "WEEKLY_STATS"
+id = "420ea278f9c0497dbf84832983d4881b"
 
 [triggers]
 crons = ["0 6 * * 1"]

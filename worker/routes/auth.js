@@ -1,6 +1,9 @@
 import { json } from "../utils/response.js";
+import { getUserByEmail } from "../database/database.js";
 
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
+const PBKDF2_SCHEME = "pbkdf2-sha256";
+const HMAC_SCHEME = "hmac-sha256";
 
 function base64Url(bytes) {
 
@@ -23,6 +26,42 @@ async function sha256(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
 
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function verifyPassword(password, storedHash, pepper = "") {
+
+  const stored = String(storedHash || "");
+
+  if (stored.startsWith(`${HMAC_SCHEME}$`)) {
+
+    const [scheme, saltValue, expectedHash] = stored.split("$");
+
+    if (scheme !== HMAC_SCHEME || !pepper || !saltValue || !expectedHash) return false;
+
+    try {
+      const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pepper), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${saltValue}:${password}`));
+
+      return safeEqual(base64Url(new Uint8Array(signature)), expectedHash);
+    } catch { return false; }
+  }
+
+  if (stored.startsWith(`${PBKDF2_SCHEME}$`)) {
+
+    const [scheme, iterationsValue, saltValue, expectedHash] = stored.split("$");
+    const iterations = Number(iterationsValue);
+
+    if (scheme !== PBKDF2_SCHEME || !Number.isSafeInteger(iterations) || iterations < 100000 || !saltValue || !expectedHash) return false;
+
+    try {
+      const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+      const derived = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: bytesFromBase64Url(saltValue), iterations }, key, 256);
+
+      return safeEqual(base64Url(new Uint8Array(derived)), expectedHash);
+    } catch { return false; }
+  }
+
+  return safeEqual(await sha256(`${password}${pepper}`), stored);
 }
 
 async function sign(value, secret) {
@@ -106,10 +145,14 @@ export async function handleAuth(request, env, pathname) {
 
   const email = String(credentials.email || "").trim().toLowerCase();
   const password = String(credentials.password || "");
-  const account = accounts(env).find((item) => String(item.email).toLowerCase() === email);
-  const hash = await sha256(`${password}${env.PASSWORD_PEPPER || ""}`);
+  let account = accounts(env).find((item) => String(item.email).toLowerCase() === email);
 
-  if (!email || !password || !account?.passwordHash || !safeEqual(hash, String(account.passwordHash))) return json({ error: "Correo o contraseña incorrectos." }, { status: 401 });
+  if (!account && env.DB && email) account = await getUserByEmail(env, email);
+
+  const storedHash = account?.passwordHash ?? account?.password_hash;
+  const isValid = Boolean(email && password && storedHash && await verifyPassword(password, storedHash, env.PASSWORD_PEPPER || ""));
+
+  if (!isValid) return json({ error: "Correo o contraseña incorrectos." }, { status: 401 });
   if (!env.SESSION_SECRET) throw new Error("SESSION_SECRET no está configurado.");
 
   const user = { email, role: account.role === "admin" ? "admin" : "member" };

@@ -1,4 +1,4 @@
-import { getWeeklyStats, saveWeeklyStats } from "../database/database.js";
+import { getWeeklyStats, incrementDailyStats, incrementWeeklyStats } from "../database/database.js";
 
 export const MY_CREATOR_ID = 802409113;
 
@@ -9,6 +9,11 @@ export function getWeekKey(date = new Date()) {
   const week = Math.ceil((day + start.getUTCDay() + 1) / 7);
 
   return `${date.getUTCFullYear()}-W${week}`;
+}
+
+export function getDayKey(date = new Date()) {
+
+  return date.toISOString().slice(0, 10);
 }
 
 export function normalizePrice(price, isPlusPlayer) {
@@ -26,31 +31,23 @@ export async function readCurrentStats(env) {
 export async function updateWeeklyStats(env, payload) {
 
   const weekKey = getWeekKey();
-  let stats;
-
-  try {
-    stats = await getWeeklyStats(env, weekKey);
-  } catch (error) {
-    console.error("[STATS] Error al leer KV", error);
-  }
-
-  stats ||= { week: weekKey, createdAt: Date.now(), spent: 0, revenue: 0, single: 0, bulk: 0, donations: 0 };
+  const changes = {};
 
   if (payload.type === "Donation") {
 
     const amount = Number(payload.amount) || 0;
 
-    stats.spent += amount;
-    stats.revenue += Math.floor(amount * 0.7);
-    stats.donations++;
+    changes.spent = amount;
+    changes.revenue = Math.floor(amount * 0.7);
+    changes.donations = 1;
 
   } else if (payload.type === "Single") {
 
     const price = normalizePrice(payload.price, payload.isPlusPlayer);
 
-    stats.spent += price;
-    stats.revenue += Math.floor(price * (payload.creatorId === MY_CREATOR_ID ? 0.7 : 0.4));
-    stats.single++;
+    changes.spent = price;
+    changes.revenue = Math.floor(price * (payload.creatorId === MY_CREATOR_ID ? 0.7 : 0.4));
+    changes.single = 1;
 
   } else if (payload.type === "Bulk") {
 
@@ -66,15 +63,25 @@ export async function updateWeeklyStats(env, payload) {
 
     }
 
-    stats.spent += spent;
-    stats.revenue += revenue;
-    stats.bulk++;
+    changes.spent = spent;
+    changes.revenue = revenue;
+    changes.bulk = 1;
 
   }
 
-  await saveWeeklyStats(env, weekKey, stats);
+  const weeklyStats = await incrementWeeklyStats(env, weekKey, changes);
 
-  return stats;
+  await incrementDailyStats(env, getDayKey(), changes);
+
+  if (env.WEEKLY_STATS) {
+    const createdAt = Number(weeklyStats.createdAt) || Date.now();
+    const legacyRecord = { ...weeklyStats, createdAt: createdAt < 1e12 ? createdAt * 1000 : createdAt };
+
+    try { await env.WEEKLY_STATS.put(weekKey, JSON.stringify(legacyRecord)); }
+    catch (error) { console.error("[WEEKLY_STATS_SYNC]", error); }
+  }
+
+  return weeklyStats;
 }
 
 export function emptyStats(week = getWeekKey()) {
