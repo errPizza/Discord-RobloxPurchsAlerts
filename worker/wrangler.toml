@@ -1,25 +1,27 @@
-name = "prchsalerts" 
-main = "index.js" 
-compatibility_date = "2025-06-07" 
+name = "prchsalerts"
+main = "worker/index.js"
+compatibility_date = "2025-06-07"
 
-[observability] 
-enabled = false 
-head_sampling_rate = 1 
+[observability]
+enabled = false
+head_sampling_rate = 1
 
-[observability.logs] 
-enabled = true 
-head_sampling_rate = 1 
-persist = true 
-invocation_logs = true 
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
 
-[observability.traces] 
-enabled = true 
-persist = true 
-head_sampling_rate = 1 
+[observability.traces]
+enabled = true
+persist = true
+head_sampling_rate = 1
 
-[[kv_namespaces]] 
-binding = "WEEKLY_STATS" 
-id = "420ea278f9c0497dbf84832983d4881b" 
+[[d1_databases]]
+binding = "DB"
+database_name = "another-game-more"
+database_id = "12fff928-a2c4-4b29-83ae-021b9621dac1"
+migrations_dir = "worker/database/migrations"
 
-[triggers] 
+[triggers]
 crons = ["0 6 * * 1"]

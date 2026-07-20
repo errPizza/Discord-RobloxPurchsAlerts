@@ -15,3 +15,4 @@ Para saber que pedo con las comisiones y demas, tambien tiene stats semanales :D
 
 > [!TIP]
 > Para agregar mas variables encriptadas ve a Cloudflare y añadele en Workers & Pages -> Settigns -> Variables and secrets :D
+

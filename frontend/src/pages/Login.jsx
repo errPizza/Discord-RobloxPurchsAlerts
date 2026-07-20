@@ -1,0 +1,6 @@
+import { useState } from "react";
+import { Navigate, useNavigate } from "react-router-dom";
+import StudioLogo from "../components/common/StudioLogo.jsx";
+import { useAuth } from "../hooks/useAuth.js";
+
+export default function Login() { const { user, login } = useAuth(); const navigate = useNavigate(); const [error, setError] = useState(""); const submit = async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); try { const next = await login(form.get("email"), form.get("password")); navigate(next.isAdmin ? "/dashboard" : "/"); } catch (err) { setError(err.message); } }; if (user) return <Navigate to={user.isAdmin ? "/dashboard" : "/"} replace />; return <div className="login-page"><form className="login-card" onSubmit={submit}><StudioLogo /><span className="section-kicker">Acceso del equipo</span><h1>Iniciar sesión</h1><p>Utiliza la cuenta asignada por el estudio.</p><label>Correo<input name="email" type="email" autoComplete="email" required /></label><label>Contraseña<input name="password" type="password" autoComplete="current-password" required /></label>{error && <div className="form-error">{error}</div>}<button className="button red" type="submit">Entrar <b>›</b></button></form></div>; }

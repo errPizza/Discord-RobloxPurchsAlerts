@@ -1,0 +1,4 @@
+import { useEffect, useState } from "react";
+import DataCard from "../components/dashboard/DataCard.jsx";
+import { api } from "../services/api.js";
+export default function Dashboard() { const [stats, setStats] = useState(null); useEffect(() => { api("/api/admin/stats").then(({ stats: result }) => setStats(result)).catch(() => setStats({})); }, []); return <><div className="page-title"><h2>Resumen semanal</h2><p>Actividad registrada durante la semana actual.</p></div><div className="data-grid"><DataCard label="Robux generados" value={`${(stats?.revenue || 0).toLocaleString()} R$`} icon="◈" /><DataCard label="Robux gastados" value={`${(stats?.spent || 0).toLocaleString()} R$`} icon="◉" /><DataCard label="Compras" value={(stats?.single || 0) + (stats?.bulk || 0)} icon="▣" /><DataCard label="Donaciones" value={stats?.donations || 0} icon="♡" /></div></>; }
