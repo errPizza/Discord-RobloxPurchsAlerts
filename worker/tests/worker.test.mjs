@@ -131,6 +131,23 @@ test("el Worker carga y expone los datos públicos del sitio", async () => {
   assert.equal(data.contacts[0].name, "Admin");
 });
 
+test("el Worker sirve React y mantiene el estado en /api/status", async () => {
+
+  const ASSETS = {
+    fetch: async (request) => new Response(`<main>${new URL(request.url).pathname}</main>`, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    }),
+  };
+  const env = { ASSETS, DB: new FakeD1() };
+  const pageResponse = await worker.fetch(new Request("https://api.example.com/dashboard/stats"), env);
+  const statusResponse = await worker.fetch(new Request("https://api.example.com/api/status"), env);
+
+  assert.equal(pageResponse.status, 200);
+  assert.equal(await pageResponse.text(), "<main>/dashboard/stats</main>");
+  assert.equal(statusResponse.headers.get("Content-Type"), "application/json; charset=utf-8");
+  assert.equal((await statusResponse.json()).status, "online");
+});
+
 test("las estadísticas se incrementan de forma acumulativa", async () => {
 
   const legacyStats = new Map();

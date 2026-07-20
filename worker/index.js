@@ -21,12 +21,14 @@ export default {
 
       if (request.method === "GET" && pathname === "/api/site") return json(await getPublicSite(env));
 
-      if (request.method === "GET" && pathname === "/") {
+      if (request.method === "GET" && pathname === "/api/status") {
 
         const enabled = await getWorkerEnabled(env);
 
         return json({ name: "Another Game More API", status: enabled ? "online" : "paused", messagesEnabled: enabled });
       }
+
+      if (request.method === "GET" && env.ASSETS) return env.ASSETS.fetch(request);
 
       return handlePublicWebhook(request, env, pathname);
 
