@@ -1,4 +1,4 @@
-name = "prchsalerts"
+name = "prchsalerts-api"
 main = "worker/index.js"
 compatibility_date = "2025-06-07"
 
