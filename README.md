@@ -2,7 +2,7 @@
 Para saber que pedo con las comisiones y demas, tambien tiene stats semanales :D
 
 > [!NOTE]
-> Ultima actualizacion [ 08/06/2026 ] | ( 10.5~horas de trabajo )
+> Ultima actualizacion [ 20/07/2026 ] | ( 25.3~horas de trabajo )
 
 > [!CAUTION]
 > Cuidado pequeño niño, cuando hice este codigo solo dios y yo sabiamos como funcionaba. Ahora ¡SOLO DIOS SABE!
