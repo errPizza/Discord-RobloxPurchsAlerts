@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import StudioLogo from "../components/common/StudioLogo.jsx";
+import PlatformIcon from "../components/common/PlatformIcon.jsx";
 import TurnstileWidget from "../components/auth/TurnstileWidget.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 import { getProviders } from "../services/auth.js";
@@ -23,7 +24,7 @@ function ProviderButtons({ providers }) {
       <span aria-hidden="true">G</span>Continuar con Google
     </a>
     <a className={`provider-button discord${providers.discord ? "" : " is-disabled"}`} href={providers.discord ? "/api/auth/oauth/discord" : undefined} aria-disabled={!providers.discord}>
-      <span aria-hidden="true">◖◗</span>Continuar con Discord
+      <PlatformIcon type="discord" size={24} />Continuar con Discord
     </a>
   </div>;
 }

@@ -1,6 +1,7 @@
 import studioImage from "../../assets/images/another-game-more-logo.png";
 import errPizzaAvatar from "../../assets/images/avatar-err-pizza.webp";
 import builderAvatar from "../../assets/images/avatar-676767.webp";
+import PlatformIcon from "../common/PlatformIcon.jsx";
 
 const profileImages = {
   4093162315: errPizzaAvatar,
@@ -12,14 +13,6 @@ const fallback = [
   { name: "676767 (@dlksadjadjkd1s3)", role: "Builder · Game Design · Analytics", description: "Especialista en construcción y diseño de experiencias, enfocado en transformar ideas en mundos claros, funcionales y memorables para cada jugador.", robloxUrl: "https://www.roblox.com/es/users/8933542097/profile", initials: "67" },
   { name: "Community", role: "Comunidad oficial", description: "El punto de encuentro de Another Game More: un espacio para conocer novedades, compartir ideas y crecer junto a jugadores y desarrolladores.", robloxUrl: "https://www.roblox.com/es/communities/16939863/Another-Game-More-ST#!/about", discord: "https://discord.gg/QzS8xqmZX8", imageKey: "studio", initials: "AGM" },
 ];
-
-function RobloxIcon() {
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7.2 2.4 14.4 4.8-4.8 14.4L2.4 16.8z" /><path d="m9.3 9.3 5.4 1.8-1.8 5.4-5.4-1.8z" /></svg>;
-}
-
-function DiscordIcon() {
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 7.2a12 12 0 0 1 7.6 0M9.2 15.2c1.8 1 3.8 1 5.6 0" /><path d="M7.4 4.8A16 16 0 0 0 3 17.8c1.7 1.3 3.3 1.8 4.8 2.2l1.1-1.6M16.6 4.8A16 16 0 0 1 21 17.8c-1.7 1.3-3.3 1.8-4.8 2.2l-1.1-1.6" /><circle cx="9" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="15" cy="12" r="1" fill="currentColor" stroke="none" /></svg>;
-}
 
 export default function ContactGrid({ contacts = fallback }) {
   const visibleContacts = contacts?.length ? contacts : fallback;
@@ -44,8 +37,8 @@ export default function ContactGrid({ contacts = fallback }) {
           <div className="team-roles">{roles.map((role) => <span key={role}>{role}</span>)}</div>
           <p className="team-description">{contact.description || "Miembro del equipo de Another Game More Studio."}</p>
           <div className="team-links">
-            {contact.robloxUrl && <a href={contact.robloxUrl} target="_blank" rel="noreferrer"><RobloxIcon /><span>{robloxLabel}</span></a>}
-            {contact.discord && <a href={contact.discord} target="_blank" rel="noreferrer"><DiscordIcon /><span>Discord</span></a>}
+            {contact.robloxUrl && <a href={contact.robloxUrl} target="_blank" rel="noreferrer"><PlatformIcon type="roblox" size={18} /><span>{robloxLabel}</span></a>}
+            {contact.discord && <a href={contact.discord} target="_blank" rel="noreferrer"><PlatformIcon type="discord" size={18} /><span>Discord</span></a>}
             {contact.email && <a href={`mailto:${contact.email}`}>{contact.email}</a>}
           </div>
         </article>;

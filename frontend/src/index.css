@@ -246,3 +246,10 @@
 
 @media(max-width:900px) and (max-height:620px){.login-page{align-items:flex-start;overflow-y:auto}.login-card{margin-block:10px}}
 @media(hover:none){.button:hover,.contact-card:hover,.game-showcase:hover,.principle-card:hover,.data-card:hover,.stat:hover{transform:none}.button:hover:before{transform:translateX(-120%) skewX(-18deg)}}
+
+/* Unified Discord and Roblox marks */
+.platform-icon{display:block;flex:0 0 auto;overflow:visible;fill:currentColor;stroke:none;color:#fff;filter:drop-shadow(0 0 7px rgba(255,255,255,.1))}
+.provider-button .platform-icon{width:24px;height:24px;color:#fff}.provider-button.discord .platform-icon{padding:1px;filter:drop-shadow(0 0 8px rgba(88,101,242,.3))}
+.team-links .platform-icon,.team-links a:first-child .platform-icon{width:18px;height:18px;fill:currentColor;stroke:none;color:#fff}
+.game-contributor .game-platform-icon{width:18px;height:18px;margin-left:auto;color:#fff;opacity:.8;transition:opacity .2s,transform .2s}.game-contributor:hover .game-platform-icon{opacity:1;transform:rotate(-5deg) scale(1.08)}
+.blocked-user-icon .platform-icon{width:23px;height:23px;fill:currentColor;stroke:none;color:#fff}.blocked-user-icon{color:#fff}.roblox-profile-identity>span .platform-icon{color:#fff}.profile-actions .platform-icon{width:18px;height:18px}

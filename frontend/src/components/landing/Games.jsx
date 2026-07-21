@@ -3,6 +3,7 @@ import gamesBackground from "../../assets/images/games-shared-background.webp";
 import errPizzaAvatar from "../../assets/images/avatar-err-pizza.webp";
 import builderAvatar from "../../assets/images/avatar-676767.webp";
 import ciciAvatar from "../../assets/images/avatar-cici.webp";
+import PlatformIcon from "../common/PlatformIcon.jsx";
 
 const principles = [
   { number: "01", title: "Gameplay con intención", text: "Cada mecánica está pensada para ser clara, satisfactoria y dejar ganas de jugar una partida más." },
@@ -61,6 +62,7 @@ export default function Games() {
               <strong>{contributor.name} <i>({contributor.handle})</i></strong>
               <small>{contributor.roles.join(" · ")}</small>
             </span>
+            <PlatformIcon type="roblox" size={18} className="game-platform-icon" />
           </a>)}
         </div>
       </div>

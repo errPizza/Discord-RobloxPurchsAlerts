@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import StudioLogo from "../components/common/StudioLogo.jsx";
+import PlatformIcon from "../components/common/PlatformIcon.jsx";
 import TurnstileWidget from "../components/auth/TurnstileWidget.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 import { getProviders } from "../services/auth.js";
@@ -68,7 +69,7 @@ export default function Signup() {
       <p>Con Google o Discord no necesitas crear una contraseña.</p>
       <div className="provider-buttons">
         <a className={`provider-button google${providers.google ? "" : " is-disabled"}`} href={providers.google ? "/api/auth/oauth/google" : undefined} aria-disabled={!providers.google}><span aria-hidden="true">G</span>Registrarme con Google</a>
-        <a className={`provider-button discord${providers.discord ? "" : " is-disabled"}`} href={providers.discord ? "/api/auth/oauth/discord" : undefined} aria-disabled={!providers.discord}><span aria-hidden="true">◖◗</span>Registrarme con Discord</a>
+        <a className={`provider-button discord${providers.discord ? "" : " is-disabled"}`} href={providers.discord ? "/api/auth/oauth/discord" : undefined} aria-disabled={!providers.discord}><PlatformIcon type="discord" size={24} />Registrarme con Discord</a>
       </div>
       <div className="auth-divider"><span>o utiliza tu correo</span></div>
       <div className="login-fields">

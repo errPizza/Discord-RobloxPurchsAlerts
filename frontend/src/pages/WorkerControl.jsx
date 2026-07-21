@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../services/api.js";
+import PlatformIcon from "../components/common/PlatformIcon.jsx";
 
 function formatDate(value) {
   if (!value) return "Fecha no disponible";
@@ -134,7 +135,7 @@ export default function WorkerControl() {
       </form>
       <div className="blocked-users-list">
         {blockedUsers.map((user) => <article className="blocked-user-row" key={user.userId}>
-          <span className="blocked-user-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 8l5 5M22 8l-5 5" /></svg></span>
+          <span className="blocked-user-icon"><PlatformIcon type="discord" size={23} /></span>
           <div className="blocked-user-copy"><strong>UserId {user.userId}</strong><span>Agregado el {formatDate(user.createdAt)}</span></div>
           <div className="blocked-user-actions"><button className="button outline" type="button" onClick={() => viewProfile(user.userId)} disabled={profileLoadingId === user.userId}>{profileLoadingId === user.userId ? "Consultando…" : "Ver información"}</button><button className="button danger" type="button" onClick={() => removeBlockedUser(user.userId)} disabled={removingId === user.userId}>{removingId === user.userId ? "Eliminando…" : "Eliminar"}</button></div>
         </article>)}
@@ -144,10 +145,10 @@ export default function WorkerControl() {
 
     {profile && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setProfile(null); }}><section className="roblox-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="roblox-profile-title">
       <button className="profile-close" type="button" onClick={() => setProfile(null)} aria-label="Cerrar información">×</button>
-      <div className="roblox-profile-identity">{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : <span>R</span>}<div><span className="page-eyebrow">Perfil de Roblox</span><h3 id="roblox-profile-title">{profile.displayName}</h3><p>@{profile.username}</p></div></div>
+      <div className="roblox-profile-identity">{profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : <span><PlatformIcon type="roblox" size={34} /></span>}<div><span className="page-eyebrow">Perfil de Roblox</span><h3 id="roblox-profile-title">{profile.displayName}</h3><p>@{profile.username}</p></div></div>
       <dl className="roblox-profile-data"><div><dt>UserId</dt><dd>{profile.id}</dd></div><div><dt>Cuenta creada</dt><dd>{formatDate(profile.created)}</dd></div><div><dt>Estado</dt><dd>{profile.isBanned ? "Cuenta suspendida" : "Cuenta activa"}</dd></div><div><dt>Verificación</dt><dd>{profile.hasVerifiedBadge ? "Insignia verificada" : "Sin insignia"}</dd></div></dl>
       {profile.description && <div className="roblox-profile-description"><span>Descripción</span><p>{profile.description}</p></div>}
-      <div className="profile-actions"><button className="button outline" type="button" onClick={() => setProfile(null)}>Cerrar</button><a className="button red" href={profile.profileUrl} target="_blank" rel="noreferrer">Abrir en Roblox ↗</a></div>
+      <div className="profile-actions"><button className="button outline" type="button" onClick={() => setProfile(null)}>Cerrar</button><a className="button red" href={profile.profileUrl} target="_blank" rel="noreferrer"><PlatformIcon type="roblox" size={18} />Abrir en Roblox ↗</a></div>
     </section></div>}
   </>;
 }
