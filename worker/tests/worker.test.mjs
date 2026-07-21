@@ -352,6 +352,8 @@ test("el Worker sirve React y mantiene el estado en /api/status", async () => {
   assert.equal(await pageResponse.text(), "<main>/dashboard/stats</main>");
   assert.equal(pageResponse.headers.get("X-Frame-Options"), "DENY");
   assert.match(pageResponse.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
+  assert.match(pageResponse.headers.get("Content-Security-Policy"), /style-src[^;]+https:\/\/fonts\.googleapis\.com/);
+  assert.match(pageResponse.headers.get("Content-Security-Policy"), /font-src[^;]+https:\/\/fonts\.gstatic\.com/);
   assert.equal(statusResponse.headers.get("Content-Type"), "application/json; charset=utf-8");
   assert.match(statusResponse.headers.get("Cache-Control"), /no-store/);
   assert.equal((await statusResponse.json()).status, "online");
