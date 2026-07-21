@@ -1,19 +1,3 @@
-export async function getAvatarUrl(userId) {
-
-  if (!userId) return null;
-
-  try {
-    const response = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=420x420&format=Png&isCircular=false`);
-    
-    return response.ok ? (await response.json()).data?.[0]?.imageUrl || null : null;
-  } catch (error) {
-
-    console.error("[THUMBNAIL]", error);
-
-    return null;
-  }
-}
-
 export async function sendDiscord(webhookUrl, payload) {
 
   if (!webhookUrl) throw new Error("El webhook correspondiente no está configurado.");

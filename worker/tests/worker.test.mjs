@@ -10,6 +10,7 @@ class FakeD1 {
   constructor() {
     this.weeklyRecord = null;
     this.dailyRecords = new Map();
+    this.blockedUsers = new Map();
     this.settings = new Map([["worker_enabled", "1"]]);
     this.user = null;
   }
@@ -23,6 +24,7 @@ class FakeD1 {
         if (sql.includes("FROM site_settings")) return { results: [{ key: "studio_name", value: "Another Game More Studio" }] };
         if (sql.includes("FROM contacts")) return { results: [{ id: 1, name: "Admin", role: "Dirección", initials: "A", display_order: 1 }] };
         if (sql.includes("FROM weekly_stats ORDER BY week")) return { results: database.weeklyRecord ? [database.weeklyRecord] : [] };
+        if (sql.includes("FROM discord_message_blocklist ORDER BY")) return { results: [...database.blockedUsers.entries()].map(([userId, createdAt]) => ({ userId, createdAt })).reverse() };
         throw new Error(`Consulta all() no contemplada: ${sql}`);
       },
       first: async () => {
@@ -39,6 +41,13 @@ class FakeD1 {
             if (sql.includes("FROM users WHERE id")) return database.user?.id === values[0] ? database.user : null;
             if (sql.includes("FROM oauth_accounts")) return null;
             if (sql.includes("FROM daily_stats WHERE day = ?")) return database.dailyRecords.get(values[0]) || null;
+            if (sql.includes("FROM discord_message_blocklist WHERE user_id")) {
+              const createdAt = database.blockedUsers.get(String(values[0]));
+
+              if (!createdAt) return null;
+
+              return sql.includes("AS userId") ? { userId: String(values[0]), createdAt } : { user_id: String(values[0]) };
+            }
 
             return database.weeklyRecord;
           },
@@ -78,6 +87,18 @@ class FakeD1 {
 
             if (sql.includes("INSERT INTO site_settings")) {
               database.settings.set("worker_enabled", values[0]);
+
+              return { success: true };
+            }
+
+            if (sql.includes("INSERT OR IGNORE INTO discord_message_blocklist")) {
+              database.blockedUsers.set(String(values[0]), Math.floor(Date.now() / 1000));
+
+              return { success: true };
+            }
+
+            if (sql.includes("DELETE FROM discord_message_blocklist")) {
+              database.blockedUsers.delete(String(values[0]));
 
               return { success: true };
             }
@@ -444,4 +465,43 @@ test("el modo pausado omite mensajes y mantiene el registro de estadísticas", a
   assert.equal(messageResult.messageSent, false);
   assert.equal(statsResponse.status, 200);
   assert.equal(session.DB.weeklyRecord.single, 1);
+});
+
+test("un UserId bloqueado omite Discord pero permite sumar estadísticas", async () => {
+
+  const session = await adminSession();
+  const addResponse = await worker.fetch(new Request("https://api.example.com/api/admin/worker/blocked-users", {
+    method: "POST",
+    headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: "802409113" }),
+  }), session.env);
+  const messageResponse = await worker.fetch(new Request("https://api.example.com/item", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret: "items-secret", userId: 802409113, displayName: "Bloqueado" }),
+  }), { ...session.env, ITEMS_SECRET: "items-secret" });
+  const statsResponse = await worker.fetch(new Request("https://api.example.com/stats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret: "stats-secret", type: "Single", price: 50, creatorId: MY_CREATOR_ID, userId: 802409113 }),
+  }), { ...session.env, STATS_SECRET: "stats-secret" });
+  const listResponse = await worker.fetch(new Request("https://api.example.com/api/admin/worker/blocked-users", { headers: { Cookie: session.cookie } }), session.env);
+  const message = await messageResponse.json();
+  const list = await listResponse.json();
+
+  assert.equal(addResponse.status, 201);
+  assert.equal(messageResponse.status, 200);
+  assert.equal(message.messageSent, false);
+  assert.equal(message.ignoredReason, "blocked_user");
+  assert.equal(statsResponse.status, 200);
+  assert.equal(session.DB.weeklyRecord.single, 1);
+  assert.equal(list.users[0].userId, "802409113");
+
+  const deleteResponse = await worker.fetch(new Request("https://api.example.com/api/admin/worker/blocked-users/802409113", {
+    method: "DELETE",
+    headers: { Cookie: session.cookie },
+  }), session.env);
+
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(session.DB.blockedUsers.size, 0);
 });

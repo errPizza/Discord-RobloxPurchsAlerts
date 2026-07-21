@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useRef, useState } from "react";
 import MetricIcon from "./MetricIcon.jsx";
 import { METRICS } from "./metrics.js";
 
@@ -31,7 +31,8 @@ function axisMaximum(points, series, axis) {
 }
 
 export default function LineChart({ points = [], series = ["revenue", "spent"], title = "Evolución de estadísticas" }) {
-  const titleId = useId();
+  const chartRef = useRef(null);
+  const [tooltip, setTooltip] = useState(null);
   const safePoints = points.length ? points : [{ key: "empty", label: "Sin datos", revenue: 0, spent: 0, single: 0, bulk: 0, donations: 0 }];
   const visibleSeries = series.filter((key) => METRICS[key]);
   const hasRobux = visibleSeries.some((key) => METRICS[key].axis === "robux");
@@ -43,12 +44,21 @@ export default function LineChart({ points = [], series = ["revenue", "spent"], 
   const lines = Object.fromEntries(visibleSeries.map((key) => [key, linePoints(safePoints, key, maxima[METRICS[key].axis])]));
   const visibleLabels = labelIndexes(safePoints.length);
 
-  return <div className="line-chart">
+  function showTooltip(event, key, item) {
+    const bounds = chartRef.current?.getBoundingClientRect();
+
+    if (!bounds) return;
+
+    const x = event.clientX - bounds.left;
+
+    setTooltip({ key, item, x, y: event.clientY - bounds.top, alignLeft: x > bounds.width * 0.68 });
+  }
+
+  return <div className="line-chart" ref={chartRef} onPointerLeave={() => setTooltip(null)}>
     <div className="chart-legend" aria-hidden="true">
       {visibleSeries.map((key) => <span key={key} style={{ "--series-color": METRICS[key].color }}><MetricIcon type={key} size={17} />{METRICS[key].label}</span>)}
     </div>
-    <div className="chart-canvas"><svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-labelledby={titleId}>
-      <title id={titleId}>{title}</title>
+    <div className="chart-canvas"><svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={title}>
       {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
         const y = PADDING.top + (HEIGHT - PADDING.top - PADDING.bottom) * ratio;
         const leftMaximum = hasRobux ? maxima.robux : maxima.count;
@@ -62,11 +72,13 @@ export default function LineChart({ points = [], series = ["revenue", "spent"], 
         </g>;
       })}
       {visibleSeries.map((key) => <polyline className="chart-line" style={{ stroke: METRICS[key].color }} points={lines[key].map(({ x, y }) => `${x},${y}`).join(" ")} key={`line-${key}`} />)}
-      {visibleSeries.flatMap((key) => lines[key].map((item) => <circle className="chart-point" style={{ fill: METRICS[key].color }} cx={item.x} cy={item.y} r="4" key={`${key}-${item.key}`}>
-        <title>{`${item.label}: ${(Number(item[key]) || 0).toLocaleString()}${METRICS[key].unit} · ${METRICS[key].label}`}</title>
-      </circle>))}
+      {visibleSeries.flatMap((key) => lines[key].map((item) => <circle className={`chart-point${tooltip?.key === key && tooltip.item.key === item.key ? " is-active" : ""}`} style={{ fill: METRICS[key].color, "--series-color": METRICS[key].color }} cx={item.x} cy={item.y} r="4" key={`${key}-${item.key}`} onPointerEnter={(event) => showTooltip(event, key, item)} onPointerMove={(event) => showTooltip(event, key, item)} />))}
       {visibleLabels.map((index) => <text className="chart-axis-label" textAnchor={index === 0 ? "start" : index === safePoints.length - 1 ? "end" : "middle"} x={lines[visibleSeries[0]][index].x} y={HEIGHT - 14} key={safePoints[index].key}>{safePoints[index].label}</text>)}
     </svg></div>
     {hasRobux && hasCount && <div className="chart-axis-note"><span>Izquierda: Robux</span><span>Derecha: actividad</span></div>}
+    {tooltip && <div className={`custom-chart-tooltip${tooltip.alignLeft ? " align-left" : ""}`} style={{ left: tooltip.x, top: tooltip.y, "--series-color": METRICS[tooltip.key].color }} role="status">
+      <span className="custom-chart-tooltip-icon"><MetricIcon type={tooltip.key} size={18} /></span>
+      <span><small>{tooltip.item.label} · {METRICS[tooltip.key].label}</small><strong>{(Number(tooltip.item[tooltip.key]) || 0).toLocaleString()}{METRICS[tooltip.key].unit}</strong></span>
+    </div>}
   </div>;
 }

@@ -1,5 +1,6 @@
-import { getDatabaseOverview, getWeeklyStats, getWorkerEnabled, listUsers, promoteUser, replaceWeeklyStats, setWorkerEnabled } from "../database/database.js";
+import { addDiscordMessageBlock, deleteDiscordMessageBlock, getDatabaseOverview, getWeeklyStats, getWorkerEnabled, listDiscordMessageBlocks, listUsers, promoteUser, replaceWeeklyStats, setWorkerEnabled } from "../database/database.js";
 import { getAnalytics, getCompleteWeeklyHistory } from "../services/analytics.js";
+import { getRobloxUserProfile } from "../services/roblox.js";
 import { emptyStats, getWeekKey, syncLegacyStats } from "../services/stats.js";
 import { requireAdmin, requireOwner } from "./auth.js";
 import { json } from "../utils/response.js";
@@ -86,6 +87,44 @@ export async function handleAdmin(request, env, pathname) {
     if (typeof payload.enabled !== "boolean") return json({ error: "El estado debe ser verdadero o falso." }, { status: 400 });
 
     return json({ enabled: await setWorkerEnabled(env, payload.enabled), success: true });
+  }
+
+  if (pathname === "/api/admin/worker/blocked-users" && request.method === "GET") {
+
+    return json({ users: await listDiscordMessageBlocks(env) });
+  }
+
+  if (pathname === "/api/admin/worker/blocked-users" && request.method === "POST") {
+
+    let payload;
+
+    try { payload = await request.json(); } catch { return json({ error: "El UserId enviado no es válido." }, { status: 400 }); }
+
+    const userId = String(payload.userId || "").trim();
+
+    if (!/^[1-9]\d{0,19}$/.test(userId)) return json({ error: "El UserId debe contener únicamente números y ser mayor que cero." }, { status: 400 });
+
+    return json({ success: true, user: await addDiscordMessageBlock(env, userId) }, { status: 201 });
+  }
+
+  const blockedProfileMatch = pathname.match(/^\/api\/admin\/worker\/blocked-users\/([1-9]\d{0,19})\/profile$/);
+
+  if (blockedProfileMatch && request.method === "GET") {
+
+    const profile = await getRobloxUserProfile(blockedProfileMatch[1]);
+
+    if (!profile) return json({ error: "Roblox no encontró información para este UserId." }, { status: 404 });
+
+    return json({ profile });
+  }
+
+  const blockedUserMatch = pathname.match(/^\/api\/admin\/worker\/blocked-users\/([1-9]\d{0,19})$/);
+
+  if (blockedUserMatch && request.method === "DELETE") {
+
+    await deleteDiscordMessageBlock(env, blockedUserMatch[1]);
+
+    return json({ success: true });
   }
 
   if (pathname === "/api/admin/database" && request.method === "GET") {

@@ -148,6 +148,32 @@ export async function setWorkerEnabled(env, enabled) {
   return enabled;
 }
 
+export async function listDiscordMessageBlocks(env) {
+
+  const result = await env.DB.prepare("SELECT user_id AS userId, created_at AS createdAt FROM discord_message_blocklist ORDER BY created_at DESC, user_id").all();
+
+  return result.results || [];
+}
+
+export async function isDiscordUserBlocked(env, userId) {
+
+  const record = await env.DB.prepare("SELECT user_id FROM discord_message_blocklist WHERE user_id = ?").bind(String(userId)).first();
+
+  return Boolean(record);
+}
+
+export async function addDiscordMessageBlock(env, userId) {
+
+  await env.DB.prepare("INSERT OR IGNORE INTO discord_message_blocklist (user_id) VALUES (?)").bind(String(userId)).run();
+
+  return env.DB.prepare("SELECT user_id AS userId, created_at AS createdAt FROM discord_message_blocklist WHERE user_id = ?").bind(String(userId)).first();
+}
+
+export async function deleteDiscordMessageBlock(env, userId) {
+
+  await env.DB.prepare("DELETE FROM discord_message_blocklist WHERE user_id = ?").bind(String(userId)).run();
+}
+
 export async function getPublicSite(env) {
 
   const [settings, contacts] = await Promise.all([
