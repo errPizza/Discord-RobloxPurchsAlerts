@@ -47,7 +47,7 @@ export default function LineChart({ points = [], series = ["revenue", "spent"], 
     <div className="chart-legend" aria-hidden="true">
       {visibleSeries.map((key) => <span key={key} style={{ "--series-color": METRICS[key].color }}><MetricIcon type={key} size={17} />{METRICS[key].label}</span>)}
     </div>
-    <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-labelledby={titleId}>
+    <div className="chart-canvas"><svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-labelledby={titleId}>
       <title id={titleId}>{title}</title>
       {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
         const y = PADDING.top + (HEIGHT - PADDING.top - PADDING.bottom) * ratio;
@@ -66,7 +66,7 @@ export default function LineChart({ points = [], series = ["revenue", "spent"], 
         <title>{`${item.label}: ${(Number(item[key]) || 0).toLocaleString()}${METRICS[key].unit} · ${METRICS[key].label}`}</title>
       </circle>))}
       {visibleLabels.map((index) => <text className="chart-axis-label" textAnchor={index === 0 ? "start" : index === safePoints.length - 1 ? "end" : "middle"} x={lines[visibleSeries[0]][index].x} y={HEIGHT - 14} key={safePoints[index].key}>{safePoints[index].label}</text>)}
-    </svg>
+    </svg></div>
     {hasRobux && hasCount && <div className="chart-axis-note"><span>Izquierda: Robux</span><span>Derecha: actividad</span></div>}
   </div>;
 }
