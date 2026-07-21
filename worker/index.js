@@ -3,7 +3,7 @@ import { handleAuth } from "./routes/auth.js";
 import { handlePublicWebhook } from "./routes/public.js";
 import { getWeekKey } from "./services/stats.js";
 import { sendDiscord, weeklySummary } from "./services/discord.js";
-import { getGroupIconUrl } from "./services/roblox.js";
+import { getAvatarUrls, getGroupIconUrl } from "./services/roblox.js";
 import { getPublicSite, getWeeklyStats } from "./database/database.js";
 import { getWorkerEnabled } from "./database/database.js";
 import { applySecurityHeaders } from "./services/security.js";
@@ -24,7 +24,15 @@ export default {
 
       else if (pathname.startsWith("/api/admin/")) response = await handleAdmin(request, env, pathname);
 
-      else if (request.method === "GET" && pathname === "/api/site") response = json(await getPublicSite(env));
+      else if (request.method === "GET" && pathname === "/api/site") {
+
+        const site = await getPublicSite(env);
+        const userIds = site.contacts.map((contact) => contact.robloxUserId).filter(Boolean);
+
+        response = json({ ...site, avatars: await getAvatarUrls(userIds) }, {
+          headers: { "Cache-Control": "private, no-cache, max-age=0" },
+        });
+      }
 
       else if (request.method === "GET" && pathname === "/api/status") {
 

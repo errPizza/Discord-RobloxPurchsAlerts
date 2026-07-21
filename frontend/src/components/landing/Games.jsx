@@ -1,8 +1,5 @@
 import lacywingsCover from "../../assets/images/lacywings-outfits-cover.webp";
 import gamesBackground from "../../assets/images/games-shared-background.webp";
-import errPizzaAvatar from "../../assets/images/avatar-err-pizza.webp";
-import builderAvatar from "../../assets/images/avatar-676767.webp";
-import ciciAvatar from "../../assets/images/avatar-cici.webp";
 import PlatformIcon from "../common/PlatformIcon.jsx";
 
 const principles = [
@@ -16,26 +13,26 @@ const contributors = [
     name: "err_Pizza",
     handle: "@err_Lo2sDat4",
     roles: ["Software Designer", "Scripter", "UI Design"],
-    avatar: errPizzaAvatar,
+    userId: "4093162315",
     profile: "https://www.roblox.com/es/users/4093162315/profile",
   },
   {
     name: "676767",
     handle: "@dlksadjadjkd1s3",
     roles: ["Builder", "Game Design", "Project Manager"],
-    avatar: builderAvatar,
+    userId: "8933542097",
     profile: "https://www.roblox.com/es/users/8933542097/profile",
   },
   {
     name: "cici",
     handle: "@cicisgrave",
     roles: ["Clothing Designer"],
-    avatar: ciciAvatar,
+    userId: "3457883254",
     profile: "https://www.roblox.com/es/users/3457883254/profile",
   },
 ];
 
-export default function Games() {
+export default function Games({ avatars = {} }) {
   return <section className="games-section" id="juegos" data-reveal>
     <div className="games-heading">
       <span className="section-kicker">Nuestras experiencias</span>
@@ -57,7 +54,9 @@ export default function Games() {
         </div>
         <div className="game-contributors">
           {contributors.map((contributor) => <a className="game-contributor" href={contributor.profile} target="_blank" rel="noreferrer" key={contributor.profile}>
-            <img src={contributor.avatar} alt={`Avatar de Roblox de ${contributor.name}`} loading="lazy" decoding="async" />
+            {avatars[contributor.userId]
+              ? <img src={avatars[contributor.userId]} alt={`Avatar actual de Roblox de ${contributor.name}`} loading="lazy" decoding="async" />
+              : <span className="game-contributor-avatar"><PlatformIcon type="roblox" size={22} /></span>}
             <span className="game-contributor-info">
               <strong>{contributor.name} <i>({contributor.handle})</i></strong>
               <small>{contributor.roles.join(" · ")}</small>

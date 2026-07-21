@@ -4,6 +4,7 @@ import test from "node:test";
 import worker from "../index.js";
 import { bulkMessage, donationMessage, singleMessage, weeklySummary } from "../services/discord.js";
 import { passwordRequirements } from "../services/password.js";
+import { getAvatarUrls } from "../services/roblox.js";
 import { MY_CREATOR_ID, updateWeeklyStats } from "../services/stats.js";
 import { hmacSha256 } from "../utils/crypto.js";
 
@@ -372,6 +373,35 @@ test("el Worker carga y expone los datos públicos del sitio", async () => {
   assert.equal(response.headers.get("Content-Type"), "application/json; charset=utf-8");
   assert.equal(data.settings.studio_name, "Another Game More Studio");
   assert.equal(data.contacts[0].name, "Admin");
+  assert.deepEqual(data.avatars, {});
+});
+
+test("Roblox entrega avatares actuales para varios integrantes en una sola consulta", async () => {
+
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+
+    return Response.json({ data: [
+      { targetId: 4093162315, state: "Completed", imageUrl: "https://cdn.example/owner.png" },
+      { targetId: 8933542097, state: "Completed", imageUrl: "https://cdn.example/co-owner.png" },
+    ] });
+  };
+
+  try {
+    const avatars = await getAvatarUrls(["4093162315", "8933542097", "4093162315", "invalid"]);
+
+    assert.match(requestedUrl, /avatar-headshot/);
+    assert.match(decodeURIComponent(requestedUrl), /userIds=4093162315,8933542097/);
+    assert.deepEqual(avatars, {
+      4093162315: "https://cdn.example/owner.png",
+      8933542097: "https://cdn.example/co-owner.png",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("el Worker sirve React y mantiene el estado en /api/status", async () => {

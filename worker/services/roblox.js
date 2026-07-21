@@ -1,16 +1,34 @@
+export async function getAvatarUrls(userIds = []) {
+
+  const normalized = [...new Set(userIds.map(String).filter((userId) => /^[1-9]\d{0,19}$/.test(userId)))].slice(0, 20);
+
+  if (!normalized.length) return {};
+
+  try {
+    const response = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${encodeURIComponent(normalized.join(","))}&size=420x420&format=Png&isCircular=false`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!response.ok) return {};
+
+    const result = await response.json();
+
+    return Object.fromEntries((result.data || [])
+      .filter((item) => item?.imageUrl && normalized.includes(String(item.targetId)))
+      .map((item) => [String(item.targetId), item.imageUrl]));
+  } catch (error) {
+    console.error("[ROBLOX_THUMBNAIL]", error);
+
+    return {};
+  }
+}
+
 export async function getAvatarUrl(userId) {
 
   if (!userId) return null;
 
-  try {
-    const response = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${encodeURIComponent(userId)}&size=420x420&format=Png&isCircular=false`, { signal: AbortSignal.timeout(8000) });
-
-    return response.ok ? (await response.json()).data?.[0]?.imageUrl || null : null;
-  } catch (error) {
-    console.error("[ROBLOX_THUMBNAIL]", error);
-
-    return null;
-  }
+  return (await getAvatarUrls([userId]))[String(userId)] || null;
 }
 
 async function getThumbnailUrl(url, errorLabel) {

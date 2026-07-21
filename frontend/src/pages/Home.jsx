@@ -10,9 +10,13 @@ const defaults = { hero_description: "Creamos experiencias que dan ganas de juga
 
 export default function Home() {
   const [site, setSite] = useState({ settings: defaults, contacts: undefined });
+  const [avatars, setAvatars] = useState({});
 
   useEffect(() => {
-    api("/api/site").then((data) => setSite({ settings: { ...defaults, ...data.settings }, contacts: data.contacts })).catch(() => {});
+    api("/api/site").then((data) => {
+      setSite({ settings: { ...defaults, ...data.settings }, contacts: data.contacts });
+      setAvatars(data.avatars || {});
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -40,7 +44,7 @@ export default function Home() {
   return <LandingLayout>
     <Hero description={site.settings.hero_description} />
     <About description={site.settings.about_description} />
-    <Games />
-    <ContactGrid contacts={site.contacts} />
+    <Games avatars={avatars} />
+    <ContactGrid contacts={site.contacts} avatars={avatars} />
   </LandingLayout>;
 }
