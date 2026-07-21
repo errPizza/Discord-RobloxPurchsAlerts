@@ -663,6 +663,8 @@ La referencia incluye cada componente y función con nombre. Los controladores a
 | Función | Qué hace |
 | --- | --- |
 | `prefersReducedMotion()` | Detecta si el navegador pide reducir animaciones. |
+| `sectionScrollTop(element, hash)` | Calcula la posición centrada y limitada a la que debe navegar cada anchor considerando el header y el final de la página. |
+| `closestSectionHash(sections, currentTop)` | Elige de forma determinista el anchor cuya posición objetivo está más cerca del scroll actual, incluso cuando hay anchors anidados. |
 | `scrollToSection(hash, updateHistory)` | Busca una sección, descuenta el header, la centra cuando es posible y realiza scroll suave accesible. |
 | `LandingLayout({ children })` | Añade header, main y footer; también procesa hashes al cambiar de ruta. |
 | `DashboardLayout()` | Protege el dashboard, restringe miembros, muestra el menú, oculta Promote a quien no sea owner y renderiza la subruta con `Outlet`. |
@@ -820,6 +822,7 @@ Edita el arreglo `stats` dentro de `StatsBar()` en `frontend/src/components/land
 
 - Logo: `frontend/src/assets/images/another-game-more-logo.png`.
 - Fondo del hero: `frontend/public/images/hero-yin-yang.jpg`.
+- Fondo de Sobre nosotros: `frontend/src/assets/images/about-background.webp`.
 - Referencias y medidas: `frontend/src/index.css`.
 
 Después de sustituir una imagen ejecuta el build; Vite generará un nombre con hash automáticamente.
@@ -930,6 +933,7 @@ La suite comprueba:
 - Rate limiting, cuerpos JSON estrictos y bloqueo tras cinco contraseñas incorrectas.
 - Firmas HMAC, caducidad y prevención de replay de webhooks.
 - CSP, anti-frame, `nosniff` y no-cache de API.
+- Posiciones estables del navbar para Inicio/Logros y Equipo/Contacto aunque sus anchors estén anidados.
 - Errores HTTP en JSON.
 - Analytics semanal, mensual y global.
 - Reemplazo exacto de una semana.

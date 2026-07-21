@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import StudioLogo from "./StudioLogo.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
-import { scrollToSection } from "../../utils/scroll.js";
+import { closestSectionHash, scrollToSection } from "../../utils/scroll.js";
 
 const links = [["Inicio", "#inicio"], ["Logros", "#logros"], ["Nosotros", "#nosotros"], ["Juegos", "#juegos"], ["Equipo", "#equipo"], ["Contacto", "#contacto"]];
 
@@ -14,16 +14,33 @@ export default function SiteHeader() {
   useEffect(() => {
     if (pathname !== "/") return undefined;
 
-    const sections = links.map(([, hash]) => document.querySelector(hash)).filter(Boolean);
-    const observer = new IntersectionObserver((entries) => {
-      const visible = entries.filter((entry) => entry.isIntersecting).sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+    const sections = links.map(([, hash]) => ({ hash, element: document.querySelector(hash) })).filter(({ element }) => element);
+    let frame = 0;
 
-      if (visible) setActiveHash(`#${visible.target.id}`);
-    }, { rootMargin: "-34% 0px -48%", threshold: [0, 0.01, 0.25, 0.6] });
+    const updateActiveSection = () => {
+      frame = 0;
 
-    sections.forEach((section) => observer.observe(section));
+      const closestHash = closestSectionHash(sections);
+      const pageBottom = Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 2;
 
-    return () => observer.disconnect();
+      setActiveHash(pageBottom ? sections.at(-1)?.hash || closestHash : closestHash);
+    };
+    const scheduleUpdate = () => {
+      if (!frame) frame = requestAnimationFrame(updateActiveSection);
+    };
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
+
+    sections.forEach(({ element }) => resizeObserver?.observe(element));
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    scheduleUpdate();
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
   }, [pathname]);
 
   const navigateToSection = (event, hash) => {

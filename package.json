@@ -5,7 +5,7 @@
   "scripts": {
     "postinstall": "npm run build",
     "build": "npm ci --prefix frontend && npm run build --prefix frontend",
-    "test": "node --test worker/tests/worker.test.mjs && npm run lint --prefix frontend",
+    "test": "node --test worker/tests/worker.test.mjs frontend/tests/scroll.test.mjs && npm run lint --prefix frontend",
     "deploy": "npm run build && wrangler deploy --keep-vars"
   },
   "devDependencies": {
