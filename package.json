@@ -2,9 +2,12 @@
   "name": "prchsalerts",
   "private": true,
   "scripts": {
+    "postinstall": "npm run build",
     "build": "npm ci --prefix frontend && npm run build --prefix frontend",
     "test": "node --test worker/tests/worker.test.mjs && npm run lint --prefix frontend",
-    "deploy": "npm run build && npx --yes wrangler@latest deploy --config worker/wrangler.toml --keep-vars"
+    "deploy": "npm run build && wrangler deploy --keep-vars"
+  },
+  "devDependencies": {
+    "wrangler": "4.112.0"
   }
 }
-

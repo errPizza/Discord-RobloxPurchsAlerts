@@ -43,7 +43,7 @@ npm run deploy
 En **Cloudflare → prchsalerts → Settings → Builds**, usa:
 
 - Root directory: `/`
-- Build command: `npm run build`
-- Deploy command: `npx wrangler deploy --config worker/wrangler.toml --keep-vars`
+- Build command: puede quedar vacío (`postinstall` ya compila Vite) o usar `npm run build`
+- Deploy command: `npx wrangler deploy --keep-vars`
 
 No configures `frontend` como root ni despliegues esa carpeta directamente: eso publica el HTML fuente sin Vite, elimina la API de la versión activa y deja la página en blanco.
