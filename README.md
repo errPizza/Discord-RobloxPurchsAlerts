@@ -1,9 +1,9 @@
 # WEB ANOTHER GAME MORE
 
-Para llevar un control de todo pues
+Para llevar un control de todo, creado SOLO por 1 persona (la web pues). Discord: err_pizza, Roblox: err_Pizza (@err_Lo2sDat4)
 
 > [!NOTE]
-> Ultima actualizacion [ 20/07/2026 ] | ( 25.3~horas de trabajo )
+> Ultima actualizacion [ 20/07/2026 ] | ( 52.8~ horas de trabajo )
 
 > [!CAUTION]
 > Cuidado pequeño niño, cuando hice este codigo solo dios y yo sabiamos como funcionaba. Ahora ¡SOLO DIOS SABE!
