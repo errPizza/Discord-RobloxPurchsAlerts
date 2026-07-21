@@ -1,4 +1,4 @@
-import { addDiscordMessageBlock, deleteDiscordMessageBlock, getDatabaseOverview, getWeeklyStats, getWorkerEnabled, listDiscordMessageBlocks, listUsers, promoteUser, replaceWeeklyStats, setWorkerEnabled } from "../database/database.js";
+import { addDiscordMessageBlock, deleteDiscordMessageBlock, deleteUser, getDatabaseOverview, getUserById, getUserProfile, getWeeklyStats, getWorkerEnabled, listDiscordMessageBlocks, listUsers, promoteUser, replaceWeeklyStats, setWorkerEnabled } from "../database/database.js";
 import { getAnalytics, getCompleteWeeklyHistory } from "../services/analytics.js";
 import { getRobloxUserProfile } from "../services/roblox.js";
 import { emptyStats, getWeekKey, syncLegacyStats } from "../services/stats.js";
@@ -16,7 +16,9 @@ export async function handleAdmin(request, env, pathname) {
 
   if (pathname.startsWith("/api/admin/promote/")) {
 
-    if (!(await requireOwner(request, env))) return json({ error: "Solo el propietario puede administrar roles." }, { status: 403 });
+    const owner = await requireOwner(request, env);
+
+    if (!owner) return json({ error: "Solo el propietario puede administrar cuentas y roles." }, { status: 403 });
 
     if (pathname === "/api/admin/promote/users" && request.method === "GET") {
       const query = new URL(request.url).searchParams.get("query") || "";
@@ -24,7 +26,21 @@ export async function handleAdmin(request, env, pathname) {
       return json({ users: await listUsers(env, query) });
     }
 
-    const promoteMatch = pathname.match(/^\/api\/admin\/promote\/users\/(\d+)$/);
+    const promoteMatch = pathname.match(/^\/api\/admin\/promote\/users\/([1-9]\d*)$/);
+
+    if (promoteMatch && request.method === "GET") {
+      const profile = await getUserProfile(env, Number(promoteMatch[1]));
+
+      if (!profile) return json({ error: "Usuario no encontrado." }, { status: 404 });
+
+      return json({
+        user: {
+          ...profile,
+          isOwner: profile.id === owner.id,
+          isCurrent: profile.id === admin.id,
+        },
+      });
+    }
 
     if (promoteMatch && request.method === "PUT") {
       const user = await promoteUser(env, Number(promoteMatch[1]));
@@ -37,7 +53,18 @@ export async function handleAdmin(request, env, pathname) {
       });
     }
 
-    return json({ error: "Ruta de promoción no encontrada." }, { status: 404 });
+    if (promoteMatch && request.method === "DELETE") {
+      const user = await getUserById(env, Number(promoteMatch[1]));
+
+      if (!user) return json({ error: "Usuario no encontrado." }, { status: 404 });
+      if (user.id === owner.id || user.id === admin.id) return json({ error: "La cuenta propietaria activa no se puede eliminar." }, { status: 409 });
+
+      if (!(await deleteUser(env, user.id))) return json({ error: "No fue posible eliminar la cuenta." }, { status: 409 });
+
+      return json({ success: true, deletedUser: { id: user.id, email: user.email } });
+    }
+
+    return json({ error: "Ruta de administración de usuarios no encontrada." }, { status: 404 });
   }
 
   if (pathname === "/api/admin/stats" && request.method === "GET") {

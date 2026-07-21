@@ -72,11 +72,46 @@ export async function listUsers(env, query = "") {
   }));
 }
 
+export async function getUserProfile(env, userId) {
+
+  const user = await env.DB.prepare(`SELECT u.id, u.email, u.role, u.display_name AS displayName, u.created_at AS createdAt,
+      CASE WHEN u.password_hash LIKE 'oauth-only$%' THEN 0 ELSE 1 END AS hasPassword,
+      (SELECT COUNT(*) FROM auth_sessions sessions
+        WHERE sessions.user_id = u.id AND sessions.expires_at > unixepoch()) AS activeSessions,
+      (SELECT MAX(sessions.created_at) FROM auth_sessions sessions
+        WHERE sessions.user_id = u.id) AS lastSessionAt
+    FROM users u WHERE u.id = ?`).bind(userId).first();
+
+  if (!user) return null;
+
+  const oauth = await env.DB.prepare(`SELECT provider, created_at AS createdAt
+    FROM oauth_accounts WHERE user_id = ? ORDER BY created_at, provider`).bind(userId).all();
+  const providers = [
+    ...(user.hasPassword ? [{ provider: "email", createdAt: user.createdAt }] : []),
+    ...(oauth.results || []),
+  ];
+
+  return {
+    ...user,
+    hasPassword: Boolean(user.hasPassword),
+    activeSessions: Number(user.activeSessions || 0),
+    providers,
+  };
+}
+
 export async function promoteUser(env, userId) {
 
   await env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?").bind(userId).run();
 
   return getUserById(env, userId);
+}
+
+export async function deleteUser(env, userId) {
+
+  const result = await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId).run();
+  const changes = result?.meta?.changes ?? result?.changes ?? 0;
+
+  return changes > 0;
 }
 
 export async function createAuthSession(env, { tokenHash, userId, userAgentHash, expiresAt }) {

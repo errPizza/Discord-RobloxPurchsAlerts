@@ -59,6 +59,25 @@ class FakeD1 {
           first: async () => {
             if (sql.includes("FROM users WHERE email")) return [database.user, ...database.additionalUsers].find((user) => user?.email.toLowerCase() === String(values[0]).toLowerCase()) || null;
             if (sql.includes("FROM users WHERE id")) return [database.user, ...database.additionalUsers].find((user) => user?.id === values[0]) || null;
+            if (sql.includes("FROM users u WHERE u.id")) {
+              const user = [database.user, ...database.additionalUsers].find((entry) => entry?.id === values[0]);
+
+              if (!user) return null;
+
+              const now = Math.floor(Date.now() / 1000);
+              const sessions = [...database.sessions.values()].filter((session) => session.userId === user.id);
+
+              return {
+                id: user.id,
+                email: user.email,
+                role: user.role,
+                displayName: user.display_name,
+                createdAt: user.created_at,
+                hasPassword: user.password_hash.startsWith("oauth-only$") ? 0 : 1,
+                activeSessions: sessions.filter((session) => session.expiresAt > now).length,
+                lastSessionAt: sessions.reduce((latest, session) => Math.max(latest, session.createdAt || 0), 0) || null,
+              };
+            }
             if (sql.includes("FROM oauth_accounts")) {
               const userId = database.oauthAccounts.get(`${values[0]}:${values[1]}`);
 
@@ -90,6 +109,14 @@ class FakeD1 {
             return database.weeklyRecord;
           },
           all: async () => {
+            if (sql.includes("FROM oauth_accounts WHERE user_id")) {
+              const results = [...database.oauthAccounts.entries()]
+                .filter(([, userId]) => userId === values[0])
+                .map(([identity]) => ({ provider: identity.split(":", 1)[0], createdAt: 1 }));
+
+              return { results };
+            }
+
             if (sql.includes("FROM users u LEFT JOIN oauth_accounts")) {
               const query = values[0];
               const user = database.user;
@@ -122,9 +149,22 @@ class FakeD1 {
             }
 
             if (sql.includes("UPDATE users SET role = 'admin'")) {
-              if (database.user?.id === values[0]) database.user.role = "admin";
+              const user = [database.user, ...database.additionalUsers].find((entry) => entry?.id === values[0]);
+
+              if (user) user.role = "admin";
 
               return { success: true };
+            }
+
+            if (sql.includes("DELETE FROM users WHERE id")) {
+              const exists = [database.user, ...database.additionalUsers].some((entry) => entry?.id === values[0]);
+
+              if (database.user?.id === values[0]) database.user = null;
+              database.additionalUsers = database.additionalUsers.filter((entry) => entry.id !== values[0]);
+              for (const [tokenHash, session] of database.sessions) if (session.userId === values[0]) database.sessions.delete(tokenHash);
+              for (const [identity, userId] of database.oauthAccounts) if (userId === values[0]) database.oauthAccounts.delete(identity);
+
+              return { success: true, meta: { changes: exists ? 1 : 0 } };
             }
 
             if (sql.includes("INSERT OR IGNORE INTO oauth_accounts")) {
@@ -134,7 +174,7 @@ class FakeD1 {
             }
 
             if (sql.includes("INSERT INTO auth_sessions")) {
-              database.sessions.set(values[0], { userId: values[1], userAgentHash: values[2], expiresAt: values[3] });
+              database.sessions.set(values[0], { userId: values[1], userAgentHash: values[2], expiresAt: values[3], createdAt: Math.floor(Date.now() / 1000) });
 
               return { success: true };
             }
@@ -465,6 +505,25 @@ test("un usuario puede registrarse con correo y recibe rol member", async () => 
   assert.equal(session.user.isAdmin, false);
 });
 
+test("el registro no duplica un correo aunque cambien mayúsculas o espacios", async () => {
+
+  const DB = new FakeD1();
+  const env = { DB, SESSION_SECRET: "test-session-secret", PASSWORD_PEPPER: "test-password-pepper" };
+  const password = "Una frase larga y segura 2026!";
+  const signup = (email) => worker.fetch(new Request("https://api.example.com/api/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, passwordConfirmation: password }),
+  }), env);
+  const first = await signup("persona@example.com");
+  const duplicate = await signup("  PERSONA@EXAMPLE.COM  ");
+
+  assert.equal(first.status, 201);
+  assert.equal(duplicate.status, 409);
+  assert.equal(DB.user.email, "persona@example.com");
+  assert.equal(DB.additionalUsers.length, 0);
+});
+
 test("el registro aplica la política de contraseña y exige confirmación", async () => {
 
   const env = { DB: new FakeD1(), SESSION_SECRET: "test-session-secret", PASSWORD_PEPPER: "test-password-pepper" };
@@ -494,7 +553,7 @@ test("la contraseña exige mayúscula, dos minúsculas, número y signo", () => 
   assert.equal(passwordRequirements("Abcdefg1!"), null);
 });
 
-test("solo el propietario puede listar usuarios y promoverlos", async () => {
+test("solo el propietario puede consultar, promover y eliminar usuarios", async () => {
 
   const DB = new FakeD1();
   DB.user = { id: 8, email: "member@example.com", password_hash: "hash", role: "member", display_name: "Member", created_at: 1 };
@@ -507,14 +566,26 @@ test("solo el propietario puede listar usuarios y promoverlos", async () => {
   }), owner.env);
   const ownerCookie = ownerLogin.headers.get("Set-Cookie").split(";", 1)[0];
   const listResponse = await worker.fetch(new Request("https://api.example.com/api/admin/promote/users", { headers: { Cookie: ownerCookie } }), owner.env);
+  const profileResponse = await worker.fetch(new Request("https://api.example.com/api/admin/promote/users/8", { headers: { Cookie: ownerCookie } }), owner.env);
   const promoteResponse = await worker.fetch(new Request("https://api.example.com/api/admin/promote/users/8", { method: "PUT", headers: { Cookie: ownerCookie } }), owner.env);
+  const deleteResponse = await worker.fetch(new Request("https://api.example.com/api/admin/promote/users/8", { method: "DELETE", headers: { Cookie: ownerCookie } }), owner.env);
+  const ownerAccount = owner.DB.additionalUsers.find((entry) => entry.email === "kikinttrex0231@gmail.com");
+  const deleteOwnerResponse = await worker.fetch(new Request(`https://api.example.com/api/admin/promote/users/${ownerAccount.id}`, { method: "DELETE", headers: { Cookie: ownerCookie } }), owner.env);
   const regularAdmin = await adminSession(DB);
   const forbiddenResponse = await worker.fetch(new Request("https://api.example.com/api/admin/promote/users", { headers: { Cookie: regularAdmin.cookie } }), regularAdmin.env);
+  const profile = (await profileResponse.json()).user;
 
   assert.equal(listResponse.status, 200);
   assert.equal((await listResponse.json()).users[0].email, "member@example.com");
+  assert.equal(profileResponse.status, 200);
+  assert.equal(profile.email, "member@example.com");
+  assert.equal(profile.hasPassword, true);
+  assert.equal("password_hash" in profile, false);
   assert.equal(promoteResponse.status, 200);
-  assert.equal(DB.user.role, "admin");
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(DB.user, null);
+  assert.equal(deleteOwnerResponse.status, 409);
+  assert.ok(owner.DB.additionalUsers.some((entry) => entry.id === ownerAccount.id));
   assert.equal(forbiddenResponse.status, 403);
 });
 
@@ -545,6 +616,23 @@ test("Google OAuth registra una cuenta nueva y crea una sesión revocable", asyn
   assert.equal(result.session.user.role, "member");
   assert.equal(result.DB.oauthAccounts.get("google:google-user-1"), result.DB.user.id);
   assert.equal(result.DB.sessions.size, 1);
+});
+
+test("Google OAuth reutiliza una cuenta manual con el mismo correo", async () => {
+
+  const DB = new FakeD1();
+
+  DB.user = { id: 5, email: "Persona@Example.com", password_hash: "manual-password-hash", role: "member", display_name: "Persona", created_at: 1 };
+
+  const result = await oauthRoundTrip("google", {
+    DB,
+    profile: { sub: "google-existing-5", email: "persona@example.com", email_verified: true, name: "Persona Google" },
+  });
+
+  assert.equal(result.callback.status, 302);
+  assert.equal(result.session.user.email, "persona@example.com");
+  assert.equal(result.DB.oauthAccounts.get("google:google-existing-5"), 5);
+  assert.equal(result.DB.additionalUsers.length, 0);
 });
 
 test("Discord OAuth enlaza una cuenta existente e inicia sesión con HTTP Basic", async () => {
