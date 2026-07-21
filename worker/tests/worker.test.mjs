@@ -101,11 +101,16 @@ class FakeD1 {
             const [week, spent, revenue, single, bulk, donations] = values;
 
             database.weeklyRecord ||= { week, createdAt: Math.floor(Date.now() / 1000), spent: 0, revenue: 0, single: 0, bulk: 0, donations: 0 };
-            database.weeklyRecord.spent += spent;
-            database.weeklyRecord.revenue += revenue;
-            database.weeklyRecord.single += single;
-            database.weeklyRecord.bulk += bulk;
-            database.weeklyRecord.donations += donations;
+
+            if (sql.includes("spent = excluded.spent")) {
+              Object.assign(database.weeklyRecord, { week, spent, revenue, single, bulk, donations });
+            } else {
+              database.weeklyRecord.spent += spent;
+              database.weeklyRecord.revenue += revenue;
+              database.weeklyRecord.single += single;
+              database.weeklyRecord.bulk += bulk;
+              database.weeklyRecord.donations += donations;
+            }
 
             return { success: true };
           },
@@ -364,6 +369,7 @@ test("el resumen entrega series semanal, mensual y global", async () => {
   const current = [...legacyStats.values()][0];
 
   legacyStats.set(current.week, { ...current, spent: 150, revenue: 90 });
+  Object.assign(session.DB.weeklyRecord, { spent: 150, revenue: 90 });
 
   const response = await worker.fetch(new Request("https://api.example.com/api/admin/analytics", { headers: { Cookie: session.cookie } }), session.env);
   const { analytics } = await response.json();
@@ -373,8 +379,44 @@ test("el resumen entrega series semanal, mensual y global", async () => {
   assert.equal(analytics.monthly.title, "Resumen Mensual");
   assert.equal(analytics.global.title, "Resumen Global");
   assert.equal(analytics.weekly.totals.revenue, 90);
+  assert.equal(analytics.weekly.totals.single, 0);
+  assert.equal(analytics.weekly.totals.bulk, 0);
   assert.equal(analytics.global.totals.spent, 150);
   assert.equal(analytics.global.totals.donations, 1);
+});
+
+test("un administrador puede reemplazar los valores exactos de una semana", async () => {
+
+  const session = await adminSession();
+  const legacyStats = new Map();
+
+  session.env.WEEKLY_STATS = {
+    put: async (key, value) => legacyStats.set(key, JSON.parse(value)),
+    list: async () => ({ keys: [...legacyStats.keys()].map((name) => ({ name })), list_complete: true }),
+    get: async (key) => legacyStats.get(key),
+  };
+
+  const response = await worker.fetch(new Request("https://api.example.com/api/admin/stats/2026-W30", {
+    method: "PUT",
+    headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+    body: JSON.stringify({ spent: 900, revenue: 500, single: 12, bulk: 4, donations: 3 }),
+  }), session.env);
+  const data = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    { spent: data.stats.spent, revenue: data.stats.revenue, single: data.stats.single, bulk: data.stats.bulk, donations: data.stats.donations },
+    { spent: 900, revenue: 500, single: 12, bulk: 4, donations: 3 },
+  );
+  assert.equal(legacyStats.get("2026-W30").revenue, 500);
+
+  const invalidResponse = await worker.fetch(new Request("https://api.example.com/api/admin/stats/2026-W30", {
+    method: "PUT",
+    headers: { Cookie: session.cookie, "Content-Type": "application/json" },
+    body: JSON.stringify({ spent: -1, revenue: 0, single: 0, bulk: 0, donations: 0 }),
+  }), session.env);
+
+  assert.equal(invalidResponse.status, 400);
 });
 
 test("el modo pausado omite mensajes y mantiene el registro de estadísticas", async () => {

@@ -73,15 +73,20 @@ export async function updateWeeklyStats(env, payload) {
 
   await incrementDailyStats(env, getDayKey(), changes);
 
-  if (env.WEEKLY_STATS) {
-    const createdAt = Number(weeklyStats.createdAt) || Date.now();
-    const legacyRecord = { ...weeklyStats, createdAt: createdAt < 1e12 ? createdAt * 1000 : createdAt };
-
-    try { await env.WEEKLY_STATS.put(weekKey, JSON.stringify(legacyRecord)); }
-    catch (error) { console.error("[WEEKLY_STATS_SYNC]", error); }
-  }
+  await syncLegacyStats(env, weeklyStats);
 
   return weeklyStats;
+}
+
+export async function syncLegacyStats(env, weeklyStats) {
+
+  if (!env.WEEKLY_STATS || !weeklyStats?.week) return;
+
+  const createdAt = Number(weeklyStats.createdAt) || Date.now();
+  const legacyRecord = { ...weeklyStats, createdAt: createdAt < 1e12 ? createdAt * 1000 : createdAt };
+
+  try { await env.WEEKLY_STATS.put(weeklyStats.week, JSON.stringify(legacyRecord)); }
+  catch (error) { console.error("[WEEKLY_STATS_SYNC]", error); }
 }
 
 export function emptyStats(week = getWeekKey()) {

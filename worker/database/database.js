@@ -84,6 +84,19 @@ export async function incrementWeeklyStats(env, weekKey, changes) {
   return getWeeklyStats(env, weekKey);
 }
 
+export async function replaceWeeklyStats(env, weekKey, values) {
+
+  const { spent, revenue, single, bulk, donations } = values;
+
+  await env.DB.prepare(`INSERT INTO weekly_stats (week, created_at, spent, revenue, single_count, bulk_count, donations)
+    VALUES (?, unixepoch(), ?, ?, ?, ?, ?)
+    ON CONFLICT(week) DO UPDATE SET spent = excluded.spent, revenue = excluded.revenue,
+    single_count = excluded.single_count, bulk_count = excluded.bulk_count,
+    donations = excluded.donations`).bind(weekKey, spent, revenue, single, bulk, donations).run();
+
+  return getWeeklyStats(env, weekKey);
+}
+
 export async function getDailyStats(env, dayKey) {
 
   return env.DB.prepare("SELECT day, created_at AS createdAt, spent, revenue, single_count AS single, bulk_count AS bulk, donations FROM daily_stats WHERE day = ?").bind(dayKey).first();

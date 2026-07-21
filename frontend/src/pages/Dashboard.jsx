@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import DataCard from "../components/dashboard/DataCard.jsx";
 import LineChart from "../components/dashboard/LineChart.jsx";
+import { METRICS } from "../components/dashboard/metrics.js";
 import { api } from "../services/api.js";
 
 export default function Dashboard() {
@@ -21,15 +22,16 @@ export default function Dashboard() {
 
 function AnalyticsPeriod({ period }) {
   const totals = period.totals || {};
+  const isGlobal = period.title === "Resumen Global";
 
   return <section className="analytics-period">
     <div className="page-title analytics-title"><span className="page-eyebrow">Analítica de actividad</span><h2>{period.title}</h2><p>{period.subtitle}</p></div>
     <div className="data-grid period-cards">
-      <DataCard label="Robux generados" value={`${(totals.revenue || 0).toLocaleString()} R$`} icon="◈" />
-      <DataCard label="Robux gastados" value={`${(totals.spent || 0).toLocaleString()} R$`} icon="◉" />
-      <DataCard label="Compras" value={totals.purchases || 0} icon="▣" />
-      <DataCard label="Donaciones" value={totals.donations || 0} icon="♡" />
+      {["revenue", "spent", "single", "bulk", "donations"].map((key) => <DataCard label={METRICS[key].cardLabel} value={`${(totals[key] || 0).toLocaleString()}${METRICS[key].unit}`} icon={key} key={key} />)}
     </div>
-    <LineChart points={period.points} />
+    <div className="period-charts">
+      <LineChart points={period.points} title={`${period.title}: revenue y gastado`} />
+      {isGlobal && <div className="secondary-chart"><div className="chart-heading"><span className="page-eyebrow">Distribución global</span><h3>Single, bulk y donations</h3><p>Actividad histórica agrupada por semana.</p></div><LineChart points={period.points} series={["single", "bulk", "donations"]} title="Resumen global de single, bulk y donations" /></div>}
+    </div>
   </section>;
 }

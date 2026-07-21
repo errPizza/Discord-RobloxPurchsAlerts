@@ -1,6 +1,6 @@
-import { getDatabaseOverview, getWeeklyStats, getWorkerEnabled, listUsers, promoteUser, setWorkerEnabled } from "../database/database.js";
-import { getAnalytics } from "../services/analytics.js";
-import { emptyStats, getWeekKey } from "../services/stats.js";
+import { getDatabaseOverview, getWeeklyStats, getWorkerEnabled, listUsers, promoteUser, replaceWeeklyStats, setWorkerEnabled } from "../database/database.js";
+import { getAnalytics, getCompleteWeeklyHistory } from "../services/analytics.js";
+import { emptyStats, getWeekKey, syncLegacyStats } from "../services/stats.js";
 import { requireAdmin, requireOwner } from "./auth.js";
 import { json } from "../utils/response.js";
 
@@ -36,9 +36,38 @@ export async function handleAdmin(request, env, pathname) {
 
   if (pathname === "/api/admin/stats" && request.method === "GET") {
 
-    const week = new URL(request.url).searchParams.get("week") || getWeekKey();
+    const currentWeek = getWeekKey();
+    const requestedWeek = new URL(request.url).searchParams.get("week");
+    const history = await getCompleteWeeklyHistory(env);
+    const selectedWeek = requestedWeek || (history.some((item) => item.week === currentWeek) ? currentWeek : history.at(-1)?.week) || currentWeek;
+    const selected = history.find((item) => item.week === selectedWeek) || emptyStats(selectedWeek);
 
-    return json({ stats: (await getWeeklyStats(env, week)) || emptyStats(week) });
+    return json({ stats: selected, weeks: history.map((item) => item.week), currentWeek });
+  }
+
+  const statsMatch = pathname.match(/^\/api\/admin\/stats\/(\d{4}-W(?:[1-9]|[1-4]\d|5[0-3]))$/);
+
+  if (statsMatch && request.method === "PUT") {
+
+    let payload;
+
+    try { payload = await request.json(); } catch { return json({ error: "Los valores enviados no son válidos." }, { status: 400 }); }
+
+    const values = {};
+
+    for (const key of ["spent", "revenue", "single", "bulk", "donations"]) {
+      const value = Number(payload[key]);
+
+      if (!Number.isSafeInteger(value) || value < 0) return json({ error: `${key} debe ser un número entero igual o mayor que cero.` }, { status: 400 });
+
+      values[key] = value;
+    }
+
+    const stats = await replaceWeeklyStats(env, statsMatch[1], values);
+
+    await syncLegacyStats(env, stats);
+
+    return json({ success: true, stats });
   }
 
   if (pathname === "/api/admin/analytics" && request.method === "GET") return json({ analytics: await getAnalytics(env) });

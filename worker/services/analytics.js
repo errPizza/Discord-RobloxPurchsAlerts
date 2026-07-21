@@ -30,12 +30,17 @@ function formatDay(day, includeMonth = true) {
 
 function point(row, label, key) {
 
+  const single = Number(row?.single) || 0;
+  const bulk = Number(row?.bulk) || 0;
+
   return {
     key,
     label,
     spent: Number(row?.spent) || 0,
     revenue: Number(row?.revenue) || 0,
-    purchases: (Number(row?.single) || 0) + (Number(row?.bulk) || 0),
+    single,
+    bulk,
+    purchases: single + bulk,
     donations: Number(row?.donations) || 0,
   };
 }
@@ -59,9 +64,11 @@ function totals(points) {
   return points.reduce((summary, item) => ({
     spent: summary.spent + item.spent,
     revenue: summary.revenue + item.revenue,
+    single: summary.single + item.single,
+    bulk: summary.bulk + item.bulk,
     purchases: summary.purchases + item.purchases,
     donations: summary.donations + item.donations,
-  }), { spent: 0, revenue: 0, purchases: 0, donations: 0 });
+  }), { spent: 0, revenue: 0, single: 0, bulk: 0, purchases: 0, donations: 0 });
 }
 
 function period(title, subtitle, points) {
@@ -69,22 +76,41 @@ function period(title, subtitle, points) {
   return { title, subtitle, points, totals: totals(points) };
 }
 
+function distributeTotal(points, key, expectedTotal) {
+
+  const expected = Math.max(0, Number(expectedTotal) || 0);
+  const current = points.reduce((sum, item) => sum + (Number(item[key]) || 0), 0);
+
+  if (!points.length || current === expected) return points;
+  if (current === 0) return points.map((item, index) => ({ ...item, [key]: index === points.length - 1 ? expected : 0 }));
+
+  const scaled = points.map((item, index) => {
+    const precise = ((Number(item[key]) || 0) / current) * expected;
+
+    return { index, value: Math.floor(precise), fraction: precise - Math.floor(precise) };
+  });
+  let remainder = expected - scaled.reduce((sum, item) => sum + item.value, 0);
+
+  for (const item of [...scaled].sort((left, right) => right.fraction - left.fraction)) {
+    if (remainder <= 0) break;
+
+    scaled[item.index].value += 1;
+    remainder -= 1;
+  }
+
+  return points.map((item, index) => ({ ...item, [key]: scaled[index].value }));
+}
+
 function reconcileCurrentWeek(points, weeklyRecord) {
 
   if (!weeklyRecord || !points.length) return points;
 
-  const current = totals(points);
   const expected = point(weeklyRecord, "", weeklyRecord.week);
-  const last = points.at(-1);
-  const reconciled = {
-    ...last,
-    spent: last.spent + Math.max(0, expected.spent - current.spent),
-    revenue: last.revenue + Math.max(0, expected.revenue - current.revenue),
-    purchases: last.purchases + Math.max(0, expected.purchases - current.purchases),
-    donations: last.donations + Math.max(0, expected.donations - current.donations),
-  };
+  let reconciled = points;
 
-  return [...points.slice(0, -1), reconciled];
+  for (const key of ["spent", "revenue", "single", "bulk", "donations"]) reconciled = distributeTotal(reconciled, key, expected[key]);
+
+  return reconciled.map((item) => ({ ...item, purchases: item.single + item.bulk }));
 }
 
 async function getLegacyHistory(env) {
@@ -113,11 +139,21 @@ async function getLegacyHistory(env) {
 
 function mergeWeeklyHistory(databaseRows, legacyRows) {
 
-  const byWeek = new Map(databaseRows.map((row) => [row.week, row]));
+  const byWeek = new Map(legacyRows.map((row) => [row.week, row]));
 
-  for (const row of legacyRows) byWeek.set(row.week, row);
+  for (const row of databaseRows) byWeek.set(row.week, row);
 
   return [...byWeek.values()].sort((left, right) => left.week.localeCompare(right.week));
+}
+
+export async function getCompleteWeeklyHistory(env) {
+
+  const [databaseRows, legacyRows] = await Promise.all([
+    getWeeklyStatsHistory(env),
+    getLegacyHistory(env),
+  ]);
+
+  return mergeWeeklyHistory(databaseRows, legacyRows);
 }
 
 export async function getAnalytics(env, now = new Date()) {
@@ -125,13 +161,11 @@ export async function getAnalytics(env, now = new Date()) {
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const weekStart = startOfWeek(today);
   const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-  const [weekRows, monthRows, databaseHistory, legacyHistory] = await Promise.all([
+  const [weekRows, monthRows, historyRows] = await Promise.all([
     getDailyStatsRange(env, getDayKey(weekStart), getDayKey(today)),
     getDailyStatsRange(env, getDayKey(monthStart), getDayKey(today)),
-    getWeeklyStatsHistory(env),
-    getLegacyHistory(env),
+    getCompleteWeeklyHistory(env),
   ]);
-  const historyRows = mergeWeeklyHistory(databaseHistory, legacyHistory);
   const currentWeek = historyRows.find((row) => row.week === getWeekKey(today));
   const weeklyPoints = reconcileCurrentWeek(completeDays(weekRows, weekStart, today, true), currentWeek);
   const monthlyPoints = completeDays(monthRows, monthStart, today);
