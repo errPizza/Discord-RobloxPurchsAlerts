@@ -1,4 +1,11 @@
 import studioImage from "../../assets/images/another-game-more-logo.png";
+import errPizzaAvatar from "../../assets/images/avatar-err-pizza.webp";
+import builderAvatar from "../../assets/images/avatar-676767.webp";
+
+const profileImages = {
+  4093162315: errPizzaAvatar,
+  8933542097: builderAvatar,
+};
 
 const fallback = [
   { name: "err_Pizza (@err_Lo2sDat4)", role: "Scripter · Software · UI Design", description: "Hola, soy desarrollador de páginas web y videojuegos. Tengo alrededor de cinco años de experiencia creando juegos en la plataforma Roblox. Al principio solo hacía sistemas individuales para personas que me los pedían, pero ahora mi equipo y yo aspiramos a mucho más.", robloxUrl: "https://www.roblox.com/es/users/4093162315/profile", initials: "EP" },
@@ -23,12 +30,15 @@ export default function ContactGrid({ contacts = fallback }) {
       {visibleContacts.map((contact, index) => {
         const roles = String(contact.role || "").split("·").map((role) => role.trim()).filter(Boolean);
         const hasStudioImage = contact.imageKey === "studio";
+        const robloxUserId = contact.robloxUrl?.match(/\/users\/(\d+)/)?.[1];
+        const profileImage = profileImages[robloxUserId];
+        const contactImage = hasStudioImage ? studioImage : profileImage;
         const area = contact.area || ["Administrador", "Game Design", "Community"][index] || "Equipo";
         const displayName = hasStudioImage && contact.name === "Community" ? "Another Game More Studio" : contact.name;
         const robloxLabel = contact.robloxUrl?.includes("/communities/") ? "Comunidad de Roblox" : "Perfil de Roblox";
 
         return <article className="contact-card team-card" style={{ "--card-index": index }} key={contact.id || contact.robloxUrl || index}>
-          <div className={`team-avatar${hasStudioImage ? " has-image" : ""}`}>{hasStudioImage ? <img src={studioImage} alt="Logotipo de Another Game More" /> : <span>{contact.initials || contact.name?.slice(0, 1)}</span>}</div>
+          <div className={`team-avatar${contactImage ? " has-image" : ""}`}>{contactImage ? <img src={contactImage} alt={hasStudioImage ? "Logotipo de Another Game More" : `Avatar de Roblox de ${contact.name}`} loading="lazy" decoding="async" /> : <span>{contact.initials || contact.name?.slice(0, 1)}</span>}</div>
           <span className="team-area">{area}</span>
           <h3>{displayName}</h3>
           <div className="team-roles">{roles.map((role) => <span key={role}>{role}</span>)}</div>

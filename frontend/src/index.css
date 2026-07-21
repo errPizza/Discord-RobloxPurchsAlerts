@@ -122,5 +122,36 @@
 
 @media(max-width:900px){.contact-grid{grid-template-columns:1fr}.team-card{min-height:0}}
 
+/* Featured games */
+.game-showcase{position:relative;display:grid;grid-template-columns:minmax(300px,.82fr) minmax(0,1.58fr);gap:0;margin-top:56px;padding:18px;overflow:hidden;border:1px solid rgba(255,255,255,.14);border-radius:14px;background:#090a09;box-shadow:0 34px 90px rgba(0,0,0,.38);isolation:isolate;transition:transform .45s cubic-bezier(.22,1,.36,1),border-color .35s,box-shadow .45s}
+.game-showcase:before{content:'';position:absolute;inset:0;z-index:-2;background-image:linear-gradient(90deg,rgba(4,5,4,.93) 0%,rgba(5,6,5,.82) 42%,rgba(5,6,5,.9) 100%),var(--game-background);background-position:center;background-size:cover;filter:saturate(.82) contrast(1.08);transition:transform .8s cubic-bezier(.22,1,.36,1),filter .5s}
+.game-showcase:after{content:'';position:absolute;inset:0;z-index:-1;background:radial-gradient(circle at 76% 18%,rgba(170,39,32,.2),transparent 30%),linear-gradient(135deg,transparent 52%,rgba(0,0,0,.38));pointer-events:none}
+.game-showcase:hover{transform:translateY(-5px);border-color:rgba(220,66,57,.34);box-shadow:0 42px 105px rgba(0,0,0,.48)}
+.game-showcase:hover:before{transform:scale(1.025);filter:saturate(.95) contrast(1.1)}
+.game-cover-wrap{position:relative;min-height:410px;overflow:hidden;border:1px solid rgba(255,255,255,.13);border-radius:10px;background:#111;box-shadow:18px 0 55px rgba(0,0,0,.32)}
+.game-cover-wrap:after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 58%,rgba(0,0,0,.7));pointer-events:none}
+.game-cover{width:100%;height:100%;display:block;object-fit:cover;transition:transform .7s cubic-bezier(.22,1,.36,1),filter .5s}
+.game-showcase:hover .game-cover{transform:scale(1.025);filter:contrast(1.04)}
+.game-index{position:absolute;left:17px;bottom:15px;z-index:1;padding:7px 10px;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(7,8,7,.72);backdrop-filter:blur(10px);color:#e8e4df;font:500 9px 'Space Grotesk';letter-spacing:.14em;text-transform:uppercase}
+.game-content{min-width:0;padding:35px 34px 28px}
+.game-category{display:block;color:#e34a41;font-size:10px;letter-spacing:.2em;text-transform:uppercase}
+.game-content>h3{margin:11px 0 16px;font:500 clamp(31px,3.7vw,48px)/1.04 'Space Grotesk';letter-spacing:-.035em}
+.game-description{max-width:700px;margin:0;color:#b2aea9;font-size:14px;line-height:1.75}
+.game-team-heading{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-top:30px;padding-top:22px;border-top:1px solid rgba(255,255,255,.1)}
+.game-team-heading>span{color:#eeeae5;font:500 13px 'Space Grotesk'}
+.game-team-heading>small{color:#77736e;font-size:9px;letter-spacing:.08em;text-transform:uppercase}
+.game-contributors{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;margin-top:13px}
+.game-contributor{min-width:0;display:flex;align-items:center;gap:11px;padding:11px;border:1px solid rgba(255,255,255,.085);border-radius:9px;background:rgba(6,7,6,.58);color:#eeeae5;text-decoration:none;backdrop-filter:blur(8px);transition:transform .25s,border-color .25s,background .25s}
+.game-contributor:hover,.game-contributor:focus-visible{transform:translateY(-3px);border-color:rgba(224,71,62,.34);background:rgba(116,27,23,.19);outline:0}
+.game-contributor>img{width:46px;height:46px;flex:0 0 46px;border:1px solid rgba(228,75,66,.2);border-radius:50%;background:#0a0b0a;object-fit:cover;box-shadow:0 8px 23px rgba(0,0,0,.35)}
+.game-contributor-info{min-width:0}
+.game-contributor-info strong,.game-contributor-info small{display:block;overflow-wrap:anywhere}
+.game-contributor-info strong{font:500 11px/1.35 'Space Grotesk'}
+.game-contributor-info strong i{color:#999590;font:400 9px 'DM Sans'}
+.game-contributor-info small{margin-top:5px;color:#a36a65;font-size:8px;line-height:1.45;text-transform:uppercase}
+
+@media(max-width:860px){.game-showcase{grid-template-columns:minmax(245px,.78fr) minmax(0,1.22fr)}.game-cover-wrap{min-height:440px}.game-content{padding:28px 25px}.game-team-heading{align-items:flex-start;flex-direction:column;gap:5px}}
+@media(max-width:700px){.game-showcase{grid-template-columns:1fr;padding:11px}.game-cover-wrap{min-height:0;aspect-ratio:1/1;box-shadow:0 18px 44px rgba(0,0,0,.32)}.game-content{padding:26px 14px 17px}.game-content>h3{font-size:34px}.game-contributors{grid-template-columns:1fr}.game-description{font-size:13px}.game-team-heading{margin-top:25px}}
+
 /* Human verification */
 .turnstile-field{display:grid;gap:8px}.turnstile-field>span{color:#8b8782;font-size:10px;letter-spacing:.08em;text-transform:uppercase}.turnstile-field>div{min-height:65px;overflow:hidden;border-radius:7px}

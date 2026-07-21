@@ -678,10 +678,10 @@ La referencia incluye cada componente y función con nombre. Los controladores a
 | `navigate(event, hash)` | Control interno de `Hero` que utiliza el scroll centrado. |
 | `StatsBar()` | Renderiza visitas, favoritos, experiencias y años creando. |
 | `About({ description })` | Renderiza la sección Sobre nosotros. |
-| `Games()` | Renderiza los tres principios de diseño del estudio. |
+| `Games()` | Renderiza el catálogo horizontal de experiencias, la portada y fondo compartido de Lacywings Outfits, su equipo con avatares y los tres principios del estudio. |
 | `RobloxIcon()` | SVG blanco utilizado en los enlaces de perfiles y comunidad. |
 | `DiscordIcon()` | SVG blanco utilizado en el enlace de Discord. |
-| `ContactGrid({ contacts })` | Renderiza Administrador, Game Design y Community; separa roles, recorta el logo circular y utiliza datos de D1 o fallback. |
+| `ContactGrid({ contacts })` | Renderiza Administrador, Game Design y Community; separa roles, muestra los avatares de Roblox o el logo circular y utiliza datos de D1 o fallback. |
 
 ### Componentes del dashboard
 
@@ -811,7 +811,10 @@ Edita el arreglo `stats` dentro de `StatsBar()` en `frontend/src/components/land
 
 - Estructura de Sobre nosotros: `frontend/src/components/landing/About.jsx`.
 - Texto configurable de Sobre nosotros: `site_settings.about_description`.
-- Principios de Juegos: arreglo `principles` en `frontend/src/components/landing/Games.jsx`.
+- Catálogo, descripción, integrantes y principios de Juegos: `frontend/src/components/landing/Games.jsx`.
+- Portada de Lacywings Outfits: `frontend/src/assets/images/lacywings-outfits-cover.webp`.
+- Fondo reutilizable para las tarjetas de juegos: `frontend/src/assets/images/games-shared-background.webp`.
+- Los avatares locales están en `frontend/src/assets/images/avatar-*.webp`; conserva el UserId y el enlace del perfil correspondientes cuando reemplaces uno.
 
 ### Cambiar el logotipo o fondo
 
