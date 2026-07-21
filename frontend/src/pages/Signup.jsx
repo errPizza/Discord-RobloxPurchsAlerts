@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import StudioLogo from "../components/common/StudioLogo.jsx";
+import TurnstileWidget from "../components/auth/TurnstileWidget.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 import { getProviders } from "../services/auth.js";
 
@@ -10,6 +11,9 @@ export default function Signup() {
   const { user, signup } = useAuth();
   const navigate = useNavigate();
   const [providers, setProviders] = useState({ google: false, discord: false });
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [challengeKey, setChallengeKey] = useState(0);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -17,7 +21,7 @@ export default function Signup() {
   const [submitting, setSubmitting] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
-  useEffect(() => { getProviders().then((result) => setProviders(result.providers)).catch(() => {}); }, []);
+  useEffect(() => { getProviders().then((result) => { setProviders(result.providers); setTurnstileSiteKey(result.turnstileSiteKey || null); }).catch(() => {}); }, []);
 
   const checks = useMemo(() => {
     const emailName = email.trim().toLowerCase().split("@", 1)[0];
@@ -40,13 +44,15 @@ export default function Signup() {
     setSubmitting(true);
 
     try {
-      const next = await signup(email, password, confirmation);
+      const next = await signup(email, password, confirmation, turnstileToken);
 
       setLeaving(true);
       window.setTimeout(() => navigate(next.isAdmin ? "/dashboard" : "/"), 320);
     } catch (requestError) {
       setError(requestError.message);
       setSubmitting(false);
+      setTurnstileToken("");
+      setChallengeKey((current) => current + 1);
     }
   };
 
@@ -73,8 +79,9 @@ export default function Signup() {
       <ul className="password-checks" aria-label="Condiciones de la contraseña">
         {checks.map((check) => <li className={check.valid ? "is-valid" : ""} key={check.label}><span>{check.valid ? "✓" : "·"}</span>{check.label}</li>)}
       </ul>
+      <TurnstileWidget key={challengeKey} siteKey={turnstileSiteKey} action="signup" onToken={setTurnstileToken} />
       {error && <div className="form-error" role="alert">{error}</div>}
-      <button className="button red" type="submit" disabled={submitting || !checks.every((check) => check.valid)}>
+      <button className="button red" type="submit" disabled={submitting || !checks.every((check) => check.valid) || Boolean(turnstileSiteKey && !turnstileToken)}>
         <span>{leaving ? "Cuenta creada" : submitting ? "Creando…" : "Crear cuenta"}</span>
         <b>{submitting && !leaving ? <i className="button-spinner" /> : "›"}</b>
       </button>

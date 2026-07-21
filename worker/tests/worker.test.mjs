@@ -5,6 +5,7 @@ import worker from "../index.js";
 import { bulkMessage, donationMessage, singleMessage, weeklySummary } from "../services/discord.js";
 import { passwordRequirements } from "../services/password.js";
 import { MY_CREATOR_ID, updateWeeklyStats } from "../services/stats.js";
+import { hmacSha256 } from "../utils/crypto.js";
 
 class FakeD1 {
 
@@ -12,8 +13,13 @@ class FakeD1 {
     this.weeklyRecord = null;
     this.dailyRecords = new Map();
     this.blockedUsers = new Map();
+    this.sessions = new Map();
+    this.oauthAccounts = new Map();
+    this.webhookEvents = new Set();
+    this.authFailures = new Map();
     this.settings = new Map([["worker_enabled", "1"]]);
     this.user = null;
+    this.additionalUsers = [];
   }
 
   prepare(sql) {
@@ -21,6 +27,19 @@ class FakeD1 {
     const database = this;
 
     return {
+      run: async () => {
+        if (sql.includes("DELETE FROM auth_sessions WHERE expires_at")) {
+          const now = Math.floor(Date.now() / 1000);
+
+          for (const [tokenHash, session] of database.sessions) if (session.expiresAt <= now) database.sessions.delete(tokenHash);
+
+          return { success: true };
+        }
+
+        if (sql.includes("DELETE FROM webhook_events WHERE created_at")) return { success: true };
+
+        throw new Error(`Consulta run() directa no contemplada: ${sql}`);
+      },
       all: async () => {
         if (sql.includes("FROM site_settings")) return { results: [{ key: "studio_name", value: "Another Game More Studio" }] };
         if (sql.includes("FROM contacts")) return { results: [{ id: 1, name: "Admin", role: "Dirección", initials: "A", display_order: 1 }] };
@@ -38,9 +57,27 @@ class FakeD1 {
       bind(...values) {
         return {
           first: async () => {
-            if (sql.includes("FROM users WHERE email")) return database.user?.email.toLowerCase() === String(values[0]).toLowerCase() ? database.user : null;
-            if (sql.includes("FROM users WHERE id")) return database.user?.id === values[0] ? database.user : null;
-            if (sql.includes("FROM oauth_accounts")) return null;
+            if (sql.includes("FROM users WHERE email")) return [database.user, ...database.additionalUsers].find((user) => user?.email.toLowerCase() === String(values[0]).toLowerCase()) || null;
+            if (sql.includes("FROM users WHERE id")) return [database.user, ...database.additionalUsers].find((user) => user?.id === values[0]) || null;
+            if (sql.includes("FROM oauth_accounts")) {
+              const userId = database.oauthAccounts.get(`${values[0]}:${values[1]}`);
+
+              return [database.user, ...database.additionalUsers].find((user) => userId && user?.id === userId) || null;
+            }
+            if (sql.includes("FROM auth_sessions s JOIN users")) {
+              const session = database.sessions.get(values[0]);
+
+              const sessionUser = [database.user, ...database.additionalUsers].find((user) => user?.id === session?.userId);
+
+              if (!session || session.userAgentHash !== values[1] || session.expiresAt <= Math.floor(Date.now() / 1000) || !sessionUser) return null;
+
+              return { ...sessionUser, expires_at: session.expiresAt };
+            }
+            if (sql.includes("FROM auth_failures WHERE identifier_hash")) {
+              const failure = database.authFailures.get(values[0]);
+
+              return failure ? { lockedUntil: failure.lockedUntil } : null;
+            }
             if (sql.includes("FROM daily_stats WHERE day = ?")) return database.dailyRecords.get(values[0]) || null;
             if (sql.includes("FROM discord_message_blocklist WHERE user_id")) {
               const createdAt = database.blockedUsers.get(String(values[0]));
@@ -71,9 +108,15 @@ class FakeD1 {
           },
           run: async () => {
             if (sql.includes("INSERT INTO users") || sql.includes("INSERT OR IGNORE INTO users")) {
-              const [email, passwordHash, displayName] = values;
+              const usesExplicitRole = sql.includes("password_hash, role, display_name");
+              const [email, passwordHash] = values;
+              const role = usesExplicitRole ? values[2] : "member";
+              const displayName = usesExplicitRole ? values[3] : values[2];
 
-              if (!database.user) database.user = { id: 1, email, password_hash: passwordHash, role: "member", display_name: displayName, created_at: Math.floor(Date.now() / 1000) };
+              const createdUser = { id: database.user ? database.additionalUsers.length + 2 : 1, email, password_hash: passwordHash, role, display_name: displayName, created_at: Math.floor(Date.now() / 1000) };
+
+              if (!database.user) database.user = createdUser;
+              else if (![database.user, ...database.additionalUsers].some((user) => user.email.toLowerCase() === String(email).toLowerCase())) database.additionalUsers.push(createdUser);
 
               return { success: true };
             }
@@ -84,7 +127,48 @@ class FakeD1 {
               return { success: true };
             }
 
-            if (sql.includes("INSERT OR IGNORE INTO oauth_accounts")) return { success: true };
+            if (sql.includes("INSERT OR IGNORE INTO oauth_accounts")) {
+              database.oauthAccounts.set(`${values[1]}:${values[2]}`, values[0]);
+
+              return { success: true };
+            }
+
+            if (sql.includes("INSERT INTO auth_sessions")) {
+              database.sessions.set(values[0], { userId: values[1], userAgentHash: values[2], expiresAt: values[3] });
+
+              return { success: true };
+            }
+
+            if (sql.includes("DELETE FROM auth_sessions WHERE token_hash")) {
+              database.sessions.delete(values[0]);
+
+              return { success: true };
+            }
+
+            if (sql.includes("INSERT INTO auth_failures")) {
+              const current = database.authFailures.get(values[0]) || { failedAttempts: 0, windowStarted: Math.floor(Date.now() / 1000), lockedUntil: 0 };
+
+              current.failedAttempts += 1;
+              if (current.failedAttempts >= 5) current.lockedUntil = Math.floor(Date.now() / 1000) + 900;
+              database.authFailures.set(values[0], current);
+
+              return { success: true };
+            }
+
+            if (sql.includes("DELETE FROM auth_failures WHERE identifier_hash")) {
+              database.authFailures.delete(values[0]);
+
+              return { success: true };
+            }
+
+            if (sql.includes("INSERT OR IGNORE INTO webhook_events")) {
+              const key = `${values[0]}:${values[1]}`;
+              const exists = database.webhookEvents.has(key);
+
+              database.webhookEvents.add(key);
+
+              return { success: true, meta: { changes: exists ? 0 : 1 } };
+            }
 
             if (sql.includes("INSERT INTO site_settings")) {
               database.settings.set("worker_enabled", values[0]);
@@ -175,6 +259,70 @@ async function adminSession(DB = new FakeD1()) {
   return { DB, env, cookie: response.headers.get("Set-Cookie").split(";", 1)[0] };
 }
 
+function responseCookie(response, name) {
+  const values = typeof response.headers.getSetCookie === "function" ? response.headers.getSetCookie() : [response.headers.get("Set-Cookie")].filter(Boolean);
+  const match = values.join(", ").match(new RegExp(`(?:^|,\\s*)${name}=([^;]+)`));
+
+  return match ? `${name}=${match[1]}` : null;
+}
+
+async function oauthRoundTrip(provider, { DB = new FakeD1(), profile }) {
+  const upper = provider.toUpperCase();
+  const env = {
+    DB,
+    SESSION_SECRET: "test-session-secret",
+    PASSWORD_PEPPER: "test-password-pepper",
+    [`${upper}_CLIENT_ID`]: `${provider}-client-id`,
+    [`${upper}_CLIENT_SECRET`]: `${provider}-client-secret`,
+  };
+  const userAgent = "AGM OAuth Test/1.0";
+  const start = await worker.fetch(new Request(`https://api.example.com/api/auth/oauth/${provider}`, { headers: { "User-Agent": userAgent } }), env);
+  const authorization = new URL(start.headers.get("Location"));
+  const state = authorization.searchParams.get("state");
+  const attemptCookie = responseCookie(start, `__Host-agm_oauth_${provider}`);
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, options = {}) => {
+    const address = String(url);
+
+    if (address.includes("/token")) {
+      const body = new URLSearchParams(options.body);
+
+      assert.equal(body.get("code"), "oauth-code");
+      assert.equal(body.get("redirect_uri"), `https://api.example.com/api/auth/oauth/${provider}/callback`);
+
+      if (provider === "discord") {
+        assert.equal(options.headers.Authorization, `Basic ${btoa("discord-client-id:discord-client-secret")}`);
+        assert.equal(body.has("client_secret"), false);
+      } else {
+        assert.equal(body.get("client_id"), "google-client-id");
+        assert.equal(body.get("client_secret"), "google-client-secret");
+      }
+
+      return Response.json({ access_token: "provider-access-token", token_type: "Bearer" });
+    }
+
+    assert.match(address, provider === "google" ? /openidconnect\.googleapis\.com/ : /discord\.com\/api\/v10\/users/);
+    assert.equal(options.headers.Authorization, "Bearer provider-access-token");
+
+    return Response.json(profile);
+  };
+
+  try {
+    const callback = await worker.fetch(new Request(`https://api.example.com/api/auth/oauth/${provider}/callback?code=oauth-code&state=${encodeURIComponent(state)}`, {
+      headers: { Cookie: attemptCookie, "User-Agent": userAgent },
+    }), env);
+    const sessionCookie = responseCookie(callback, "__Host-agm_session");
+    const sessionResponse = await worker.fetch(new Request("https://api.example.com/api/auth/session", {
+      headers: { Cookie: sessionCookie, "User-Agent": userAgent },
+    }), env);
+
+    return { callback, session: await sessionResponse.json(), DB };
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 test("el Worker carga y expone los datos públicos del sitio", async () => {
 
   const response = await worker.fetch(new Request("https://api.example.com/api/site"), { DB: new FakeD1() });
@@ -199,7 +347,10 @@ test("el Worker sirve React y mantiene el estado en /api/status", async () => {
 
   assert.equal(pageResponse.status, 200);
   assert.equal(await pageResponse.text(), "<main>/dashboard/stats</main>");
+  assert.equal(pageResponse.headers.get("X-Frame-Options"), "DENY");
+  assert.match(pageResponse.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
   assert.equal(statusResponse.headers.get("Content-Type"), "application/json; charset=utf-8");
+  assert.match(statusResponse.headers.get("Cache-Control"), /no-store/);
   assert.equal((await statusResponse.json()).status, "online");
 });
 
@@ -283,7 +434,7 @@ test("un administrador almacenado en D1 puede iniciar sesión", async () => {
   assert.equal(response.status, 200);
   assert.equal(data.user.email, "admin@example.com");
   assert.equal(data.user.isAdmin, true);
-  assert.match(response.headers.get("Set-Cookie"), /^agm_session=/);
+  assert.match(response.headers.get("Set-Cookie"), /^__Host-agm_session=/);
 });
 
 test("un usuario puede registrarse con correo y recibe rol member", async () => {
@@ -374,7 +525,155 @@ test("OAuth informa proveedores disponibles e inicia con state seguro", async ()
   assert.equal(destination.origin, "https://accounts.google.com");
   assert.equal(destination.searchParams.get("scope"), "openid email profile");
   assert.ok(destination.searchParams.get("state"));
-  assert.match(start.headers.get("Set-Cookie"), /^agm_oauth_attempt=/);
+  assert.match(start.headers.get("Set-Cookie"), /^__Host-agm_oauth_google=/);
+});
+
+test("Google OAuth registra una cuenta nueva y crea una sesión revocable", async () => {
+
+  const result = await oauthRoundTrip("google", {
+    profile: { sub: "google-user-1", email: "new-google@example.com", email_verified: true, name: "Google User" },
+  });
+
+  assert.equal(result.callback.status, 302);
+  assert.equal(new URL(result.callback.headers.get("Location")).pathname, "/");
+  assert.equal(result.session.user.email, "new-google@example.com");
+  assert.equal(result.session.user.role, "member");
+  assert.equal(result.DB.oauthAccounts.get("google:google-user-1"), result.DB.user.id);
+  assert.equal(result.DB.sessions.size, 1);
+});
+
+test("Discord OAuth enlaza una cuenta existente e inicia sesión con HTTP Basic", async () => {
+
+  const DB = new FakeD1();
+
+  DB.user = { id: 7, email: "owner@example.com", password_hash: "oauth-only$existing", role: "admin", display_name: "Owner" };
+
+  const result = await oauthRoundTrip("discord", {
+    DB,
+    profile: { id: "discord-user-7", email: "owner@example.com", verified: true, global_name: "Discord Owner", username: "owner" },
+  });
+
+  assert.equal(result.callback.status, 302);
+  assert.equal(new URL(result.callback.headers.get("Location")).pathname, "/dashboard");
+  assert.equal(result.session.user.email, "owner@example.com");
+  assert.equal(result.session.user.isAdmin, true);
+  assert.equal(DB.oauthAccounts.get("discord:discord-user-7"), 7);
+});
+
+test("cerrar sesión revoca el token almacenado en D1", async () => {
+
+  const session = await adminSession();
+  const before = await worker.fetch(new Request("https://api.example.com/api/auth/session", { headers: { Cookie: session.cookie } }), session.env);
+  const logout = await worker.fetch(new Request("https://api.example.com/api/auth/logout", {
+    method: "POST",
+    headers: { Cookie: session.cookie, Origin: "https://api.example.com" },
+  }), session.env);
+  const after = await worker.fetch(new Request("https://api.example.com/api/auth/session", { headers: { Cookie: session.cookie } }), session.env);
+
+  assert.equal((await before.json()).user.isAdmin, true);
+  assert.equal(logout.status, 200);
+  assert.equal(session.DB.sessions.size, 0);
+  assert.equal((await after.json()).user.isAdmin, false);
+});
+
+test("las mutaciones administrativas rechazan orígenes externos", async () => {
+
+  const session = await adminSession();
+  const response = await worker.fetch(new Request("https://api.example.com/api/admin/worker", {
+    method: "PUT",
+    headers: { Cookie: session.cookie, Origin: "https://attacker.example", "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled: false }),
+  }), session.env);
+
+  assert.equal(response.status, 403);
+  assert.match((await response.json()).error, /Origen/);
+});
+
+test("auth limita abuso y rechaza cuerpos que no son JSON", async () => {
+
+  const limited = await worker.fetch(new Request("https://api.example.com/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "test@example.com", password: "Password1!" }),
+  }), { AUTH_RATE_LIMITER: { limit: async () => ({ success: false }) } });
+  const invalidType = await worker.fetch(new Request("https://api.example.com/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: "email=test@example.com",
+  }), {});
+
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get("Retry-After"), "60");
+  assert.equal(invalidType.status, 415);
+});
+
+test("cinco contraseñas incorrectas bloquean temporalmente la cuenta", async () => {
+
+  const DB = new FakeD1();
+  const pepper = "lockout-test-pepper";
+
+  DB.user = { id: 1, email: "locked@example.com", password_hash: await d1PasswordHash("Correct1!", pepper), role: "member", display_name: "Locked" };
+
+  const env = { DB, SESSION_SECRET: "session-secret", PASSWORD_PEPPER: pepper };
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const response = await worker.fetch(new Request("https://api.example.com/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "locked@example.com", password: "Wrong1!" }),
+    }), env);
+
+    assert.equal(response.status, 401);
+  }
+
+  const blocked = await worker.fetch(new Request("https://api.example.com/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "locked@example.com", password: "Correct1!" }),
+  }), env);
+
+  assert.equal(blocked.status, 429);
+  assert.equal(blocked.headers.get("Retry-After"), "900");
+
+  DB.authFailures.values().next().value.lockedUntil = 0;
+
+  const recovered = await worker.fetch(new Request("https://api.example.com/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "locked@example.com", password: "Correct1!" }),
+  }), env);
+
+  assert.equal(recovered.status, 200);
+  assert.equal(DB.authFailures.size, 0);
+});
+
+test("los webhooks firmados rechazan replay y no duplican estadísticas", async () => {
+
+  const DB = new FakeD1();
+  const secret = "stats-signature-secret";
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const nonce = "unique_nonce_123456789";
+  const raw = JSON.stringify({ secret, type: "Donation", amount: 100, userId: 123456 });
+  const signature = await hmacSha256(`${timestamp}.${nonce}.${raw}`, secret);
+  const env = { DB, STATS_SECRET: secret, REQUIRE_SIGNED_WEBHOOKS: "true" };
+  const headers = {
+    "Content-Type": "application/json",
+    "X-AGM-Timestamp": timestamp,
+    "X-AGM-Nonce": nonce,
+    "X-AGM-Signature": signature,
+  };
+  const unsigned = await worker.fetch(new Request("https://api.example.com/stats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: raw,
+  }), env);
+  const accepted = await worker.fetch(new Request("https://api.example.com/stats", { method: "POST", headers, body: raw }), env);
+  const replay = await worker.fetch(new Request("https://api.example.com/stats", { method: "POST", headers, body: raw }), env);
+
+  assert.equal(unsigned.status, 401);
+  assert.equal(accepted.status, 200);
+  assert.equal((await replay.json()).duplicate, true);
+  assert.equal(DB.weeklyRecord.donations, 1);
 });
 
 test("las respuestas de error tienen estado y cuerpo JSON", async () => {

@@ -17,6 +17,19 @@ export async function createEmailUser(env, email, passwordHash) {
   return getUserByEmail(env, email);
 }
 
+export async function ensureLegacyUser(env, account) {
+
+  const email = String(account.email || "").trim().toLowerCase();
+  const passwordHash = account.passwordHash ?? account.password_hash;
+  const role = account.role === "admin" ? "admin" : "member";
+  const displayName = String(account.displayName || account.display_name || email.split("@", 1)[0]).slice(0, 80);
+
+  await env.DB.prepare(`INSERT OR IGNORE INTO users (email, password_hash, role, display_name)
+    VALUES (?, ?, ?, ?)`).bind(email, passwordHash, role, displayName).run();
+
+  return getUserByEmail(env, email);
+}
+
 export async function getUserByOAuth(env, provider, providerUserId) {
 
   return env.DB.prepare(`SELECT u.id, u.email, u.password_hash, u.role, u.display_name
@@ -64,6 +77,62 @@ export async function promoteUser(env, userId) {
   await env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?").bind(userId).run();
 
   return getUserById(env, userId);
+}
+
+export async function createAuthSession(env, { tokenHash, userId, userAgentHash, expiresAt }) {
+
+  await env.DB.prepare("DELETE FROM auth_sessions WHERE expires_at <= unixepoch()").run();
+  await env.DB.prepare(`INSERT INTO auth_sessions (token_hash, user_id, user_agent_hash, expires_at)
+    VALUES (?, ?, ?, ?)`).bind(tokenHash, userId, userAgentHash, expiresAt).run();
+}
+
+export async function getAuthSession(env, tokenHash, userAgentHash) {
+
+  return env.DB.prepare(`SELECT u.id, u.email, u.password_hash, u.role, u.display_name, s.expires_at
+    FROM auth_sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.token_hash = ? AND s.user_agent_hash = ? AND s.expires_at > unixepoch()`)
+    .bind(tokenHash, userAgentHash).first();
+}
+
+export async function deleteAuthSession(env, tokenHash) {
+
+  await env.DB.prepare("DELETE FROM auth_sessions WHERE token_hash = ?").bind(tokenHash).run();
+}
+
+export async function isLoginLocked(env, identifierHash) {
+
+  const record = await env.DB.prepare("SELECT locked_until AS lockedUntil FROM auth_failures WHERE identifier_hash = ?").bind(identifierHash).first();
+
+  return Number(record?.lockedUntil) > Math.floor(Date.now() / 1000);
+}
+
+export async function recordLoginFailure(env, identifierHash) {
+
+  await env.DB.prepare(`INSERT INTO auth_failures (identifier_hash, failed_attempts, window_started, locked_until)
+    VALUES (?, 1, unixepoch(), 0)
+    ON CONFLICT(identifier_hash) DO UPDATE SET
+      failed_attempts = CASE WHEN unixepoch() - window_started > 900 THEN 1 ELSE failed_attempts + 1 END,
+      window_started = CASE WHEN unixepoch() - window_started > 900 THEN unixepoch() ELSE window_started END,
+      locked_until = CASE
+        WHEN unixepoch() - window_started > 900 THEN 0
+        WHEN failed_attempts + 1 >= 5 THEN unixepoch() + 900
+        ELSE locked_until
+      END`).bind(identifierHash).run();
+}
+
+export async function clearLoginFailures(env, identifierHash) {
+
+  await env.DB.prepare("DELETE FROM auth_failures WHERE identifier_hash = ?").bind(identifierHash).run();
+}
+
+export async function claimWebhookEvent(env, scope, eventId) {
+
+  await env.DB.prepare("DELETE FROM webhook_events WHERE created_at < unixepoch() - 86400").run();
+
+  const result = await env.DB.prepare("INSERT OR IGNORE INTO webhook_events (scope, event_id) VALUES (?, ?)").bind(scope, eventId).run();
+  const changes = result?.meta?.changes ?? result?.changes ?? 0;
+
+  return changes > 0;
 }
 
 export async function getWeeklyStats(env, weekKey) {

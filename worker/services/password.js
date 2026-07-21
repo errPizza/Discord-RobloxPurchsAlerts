@@ -73,3 +73,12 @@ export async function verifyPassword(password, storedHash, pepper = "") {
 
   return safeEqual(await sha256Hex(`${password}${pepper}`), stored);
 }
+
+export async function dummyPasswordCheck(password, pepper = "") {
+
+  if (!pepper) return;
+
+  const salt = new TextEncoder().encode("agm-login-dummy-salt");
+
+  await derivePassword(String(password || ""), pepper, salt, PBKDF2_ITERATIONS);
+}

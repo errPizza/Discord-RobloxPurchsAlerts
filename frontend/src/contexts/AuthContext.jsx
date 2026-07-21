@@ -9,8 +9,8 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     user,
     loading,
-    login: async (email, password) => { const data = await auth.login(email, password); setUser(data.user); return data.user; },
-    signup: async (email, password, passwordConfirmation) => { const data = await auth.signup(email, password, passwordConfirmation); setUser(data.user); return data.user; },
+    login: async (email, password, turnstileToken) => { const data = await auth.login(email, password, turnstileToken); setUser(data.user); return data.user; },
+    signup: async (email, password, passwordConfirmation, turnstileToken) => { const data = await auth.signup(email, password, passwordConfirmation, turnstileToken); setUser(data.user); return data.user; },
     logout: async () => { await auth.logout(); setUser(null); },
   }), [user, loading]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,7 +1,6 @@
 import { getOrCreateOAuthUser } from "../database/database.js";
 import { base64Url, bytesFromBase64Url, hmacSha256, randomToken, safeEqual } from "../utils/crypto.js";
 
-const OAUTH_COOKIE = "agm_oauth_attempt";
 const OAUTH_MAX_AGE = 10 * 60;
 
 const PROVIDERS = {
@@ -13,9 +12,10 @@ const PROVIDERS = {
     profileUrl: "https://openidconnect.googleapis.com/v1/userinfo",
     scope: "openid email profile",
     authorizationParams: { prompt: "select_account" },
+    tokenAuth: "body",
     idField: "sub",
     name: (profile) => profile.name,
-    verified: (profile) => profile.email_verified === true,
+    verified: (profile) => profile.email_verified === true || profile.email_verified === "true",
   },
   discord: {
     clientId: "DISCORD_CLIENT_ID",
@@ -25,6 +25,7 @@ const PROVIDERS = {
     profileUrl: "https://discord.com/api/v10/users/@me",
     scope: "identify email",
     authorizationParams: {},
+    tokenAuth: "basic",
     idField: "id",
     name: (profile) => profile.global_name || profile.username,
     verified: (profile) => profile.verified === true,
@@ -46,9 +47,18 @@ function readCookie(request, name) {
   return match ? match[1] : null;
 }
 
-export function oauthCookie(value, maxAge = OAUTH_MAX_AGE) {
+function oauthCookieName(request, provider) {
 
-  return `${OAUTH_COOKIE}=${value}; Path=/api/auth/oauth/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+  const secure = new URL(request.url).protocol === "https:";
+
+  return `${secure ? "__Host-" : ""}agm_oauth_${provider}`;
+}
+
+export function oauthCookie(request, provider, value, maxAge = OAUTH_MAX_AGE) {
+
+  const secure = new URL(request.url).protocol === "https:";
+
+  return `${oauthCookieName(request, provider)}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax`;
 }
 
 function providerConfig(env, provider) {
@@ -73,11 +83,19 @@ export function oauthProviders(env) {
   }));
 }
 
-function callbackUrl(request, provider) {
+function callbackUrl(request, env, provider) {
 
-  const url = new URL(request.url);
+  let origin = new URL(request.url).origin;
 
-  return `${url.origin}/api/auth/oauth/${provider}/callback`;
+  if (env.PUBLIC_ORIGIN) {
+    try {
+      const configured = new URL(env.PUBLIC_ORIGIN);
+
+      if (configured.protocol === "https:" || configured.hostname === "localhost" || configured.hostname === "127.0.0.1") origin = configured.origin;
+    } catch { /* La URL de la petición sigue siendo la alternativa segura. */ }
+  }
+
+  return `${origin}/api/auth/oauth/${provider}/callback`;
 }
 
 async function signedAttempt(data, secret) {
@@ -106,19 +124,20 @@ export async function beginOAuth(request, env, provider) {
   if (!env.SESSION_SECRET) throw new OAuthError("server_config", "SESSION_SECRET no está configurado.");
 
   const state = randomToken(32);
-  const attempt = await signedAttempt({ provider, state, exp: Math.floor(Date.now() / 1000) + OAUTH_MAX_AGE }, env.SESSION_SECRET);
+  const redirectUri = callbackUrl(request, env, provider);
+  const attempt = await signedAttempt({ provider, state, redirectUri, exp: Math.floor(Date.now() / 1000) + OAUTH_MAX_AGE }, env.SESSION_SECRET);
   const authorization = new URL(config.authorizationUrl);
 
   authorization.search = new URLSearchParams({
     client_id: config.clientIdValue,
-    redirect_uri: callbackUrl(request, provider),
+    redirect_uri: redirectUri,
     response_type: "code",
     scope: config.scope,
     state,
     ...config.authorizationParams,
   }).toString();
 
-  return new Response(null, { status: 302, headers: { Location: authorization.toString(), "Set-Cookie": oauthCookie(attempt) } });
+  return new Response(null, { status: 302, headers: { Location: authorization.toString(), "Set-Cookie": oauthCookie(request, provider, attempt) } });
 }
 
 async function responseJson(response, code) {
@@ -134,7 +153,7 @@ export async function finishOAuth(request, env, provider) {
 
   const config = providerConfig(env, provider);
   const url = new URL(request.url);
-  const attempt = await parseAttempt(readCookie(request, OAUTH_COOKIE), env.SESSION_SECRET);
+  const attempt = await parseAttempt(readCookie(request, oauthCookieName(request, provider)), env.SESSION_SECRET);
 
   if (!config?.clientIdValue || !config.clientSecretValue) throw new OAuthError("provider_unavailable", `${provider} no está configurado.`);
   if (url.searchParams.has("error")) throw new OAuthError("access_denied", "El usuario canceló la autorización.");
@@ -146,27 +165,40 @@ export async function finishOAuth(request, env, provider) {
 
   if (!code) throw new OAuthError("missing_code", "El proveedor no devolvió un código.");
 
+  const tokenBody = new URLSearchParams({
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: attempt.redirectUri,
+  });
+  const tokenHeaders = { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" };
+
+  if (config.tokenAuth === "basic") tokenHeaders.Authorization = `Basic ${btoa(`${config.clientIdValue}:${config.clientSecretValue}`)}`;
+  else {
+    tokenBody.set("client_id", config.clientIdValue);
+    tokenBody.set("client_secret", config.clientSecretValue);
+  }
+
   const tokenResponse = await fetch(config.tokenUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-    body: new URLSearchParams({
-      client_id: config.clientIdValue,
-      client_secret: config.clientSecretValue,
-      code,
-      grant_type: "authorization_code",
-      redirect_uri: callbackUrl(request, provider),
-    }),
+    headers: tokenHeaders,
+    body: tokenBody,
+    signal: AbortSignal.timeout(10000),
   });
   const token = await responseJson(tokenResponse, "token_exchange_failed");
 
   if (!token.access_token) throw new OAuthError("token_exchange_failed", "El proveedor no devolvió un access token.");
 
-  const profileResponse = await fetch(config.profileUrl, { headers: { Authorization: `Bearer ${token.access_token}`, Accept: "application/json" } });
+  const profileResponse = await fetch(config.profileUrl, {
+    headers: { Authorization: `Bearer ${token.access_token}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(10000),
+  });
   const profile = await responseJson(profileResponse, "profile_failed");
   const email = String(profile.email || "").trim().toLowerCase();
   const providerUserId = String(profile[config.idField] || "");
 
-  if (!email || !providerUserId || !config.verified(profile)) throw new OAuthError("email_unverified", "El proveedor no entregó un correo verificado.");
+  if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !providerUserId || providerUserId.length > 160 || !config.verified(profile)) {
+    throw new OAuthError("email_unverified", "El proveedor no entregó un correo verificado.");
+  }
 
   return getOrCreateOAuthUser(env, {
     provider,

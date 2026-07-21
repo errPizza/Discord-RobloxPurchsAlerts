@@ -1,6 +1,7 @@
 {
   "name": "prchsalerts",
   "private": true,
+  "type": "module",
   "scripts": {
     "postinstall": "npm run build",
     "build": "npm ci --prefix frontend && npm run build --prefix frontend",

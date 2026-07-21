@@ -1,8 +1,10 @@
 import { OWNER_EMAIL } from "../config.js";
-import { createEmailUser, getUserByEmail, getUserById } from "../database/database.js";
+import { clearLoginFailures, createAuthSession, createEmailUser, deleteAuthSession, ensureLegacyUser, getAuthSession, getUserByEmail, isLoginLocked, recordLoginFailure } from "../database/database.js";
 import { beginOAuth, finishOAuth, OAuthError, oauthCookie, oauthProviders } from "../services/oauth.js";
-import { hashPassword, passwordRequirements, verifyPassword } from "../services/password.js";
-import { base64Url, bytesFromBase64Url, hmacSha256, safeEqual } from "../utils/crypto.js";
+import { dummyPasswordCheck, hashPassword, passwordRequirements, verifyPassword } from "../services/password.js";
+import { randomToken, sha256Hex } from "../utils/crypto.js";
+import { consumeRateLimit, isSameOriginMutation, rateLimited, readJsonBody, validationError } from "../services/security.js";
+import { turnstileSiteKey, verifyTurnstile } from "../services/turnstile.js";
 import { json } from "../utils/response.js";
 
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
@@ -14,9 +16,16 @@ function readCookie(request, name) {
   return match ? match[1] : null;
 }
 
-function sessionCookie(value, maxAge = SESSION_MAX_AGE) {
+function sessionCookieName(request) {
 
-  return `agm_session=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+  return `${new URL(request.url).protocol === "https:" ? "__Host-" : ""}agm_session`;
+}
+
+function sessionCookie(request, value, maxAge = SESSION_MAX_AGE, name = sessionCookieName(request)) {
+
+  const secure = new URL(request.url).protocol === "https:";
+
+  return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax`;
 }
 
 function accounts(env) {
@@ -51,52 +60,47 @@ function publicUser(user) {
   };
 }
 
-async function sessionToken(user, secret) {
+async function userAgentHash(request) {
 
-  if (!secret) throw new Error("SESSION_SECRET no está configurado.");
-
-  const payload = base64Url(new TextEncoder().encode(JSON.stringify({
-    id: user.id || null,
-    email: normalizedEmail(user.email),
-    role: user.role === "admin" ? "admin" : "member",
-    exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE,
-  })));
-
-  return `${payload}.${await hmacSha256(payload, secret)}`;
+  return sha256Hex(request.headers.get("User-Agent") || "");
 }
 
-async function sessionHeaders(user, env) {
+async function sessionHeaders(request, user, env) {
 
-  return { "Set-Cookie": sessionCookie(await sessionToken(user, env.SESSION_SECRET)) };
+  if (!env.DB || !user?.id) throw new Error("No fue posible crear una sesión persistente.");
+
+  const token = randomToken(32);
+  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE;
+
+  await createAuthSession(env, {
+    tokenHash: await sha256Hex(token),
+    userId: user.id,
+    userAgentHash: await userAgentHash(request),
+    expiresAt,
+  });
+
+  const headers = new Headers();
+
+  headers.append("Set-Cookie", sessionCookie(request, token));
+  if (sessionCookieName(request) !== "agm_session") headers.append("Set-Cookie", sessionCookie(request, "", 0, "agm_session"));
+
+  return headers;
 }
 
 export async function getSession(request, env) {
 
-  if (!env.SESSION_SECRET) return null;
+  if (!env.DB) return null;
 
-  const token = readCookie(request, "agm_session");
+  const token = readCookie(request, sessionCookieName(request)) || readCookie(request, "agm_session");
 
-  if (!token || !token.includes(".")) return null;
+  if (!token || token.length > 256) return null;
 
-  const [payload, signature] = token.split(".");
+  try { return await getAuthSession(env, await sha256Hex(token), await userAgentHash(request)); }
+  catch (error) {
+    console.error("[SESSION_READ]", error instanceof Error ? error.message : "unknown_error");
 
-  if (!safeEqual(signature, await hmacSha256(payload, env.SESSION_SECRET))) return null;
-
-  try {
-    const session = JSON.parse(new TextDecoder().decode(bytesFromBase64Url(payload)));
-
-    if (session.exp <= Math.floor(Date.now() / 1000)) return null;
-
-    if (session.id && env.DB) {
-      const currentUser = await getUserById(env, session.id);
-
-      if (!currentUser) return null;
-
-      return { ...session, ...currentUser };
-    }
-
-    return session;
-  } catch { return null; }
+    return null;
+  }
 }
 
 export async function requireAdmin(request, env) {
@@ -113,7 +117,7 @@ export async function requireOwner(request, env) {
   return normalizedEmail(session?.email) === OWNER_EMAIL ? session : null;
 }
 
-function oauthErrorRedirect(request, error) {
+function oauthErrorRedirect(request, provider, error) {
 
   const destination = new URL("/login", request.url);
 
@@ -121,7 +125,7 @@ function oauthErrorRedirect(request, error) {
 
   const headers = new Headers({ Location: destination.toString() });
 
-  headers.append("Set-Cookie", oauthCookie("", 0));
+  headers.append("Set-Cookie", oauthCookie(request, provider, "", 0));
 
   return new Response(null, { status: 302, headers });
 }
@@ -133,14 +137,17 @@ async function oauthCallback(request, env, provider) {
     const destination = new URL(user.role === "admin" ? "/dashboard" : "/", request.url);
     const headers = new Headers({ Location: destination.toString() });
 
-    headers.append("Set-Cookie", sessionCookie(await sessionToken(user, env.SESSION_SECRET)));
-    headers.append("Set-Cookie", oauthCookie("", 0));
+    const session = await sessionHeaders(request, user, env);
+    const sessionCookies = typeof session.getSetCookie === "function" ? session.getSetCookie() : [session.get("Set-Cookie")].filter(Boolean);
+
+    for (const cookie of sessionCookies) headers.append("Set-Cookie", cookie);
+    headers.append("Set-Cookie", oauthCookie(request, provider, "", 0));
 
     return new Response(null, { status: 302, headers });
   } catch (error) {
     console.error("OAuth callback failed", provider, error);
 
-    return oauthErrorRedirect(request, error);
+    return oauthErrorRedirect(request, provider, error);
   }
 }
 
@@ -148,7 +155,7 @@ async function signup(request, env) {
 
   let credentials;
 
-  try { credentials = await request.json(); } catch { return json({ error: "Datos de registro inválidos." }, { status: 400 }); }
+  try { credentials = (await readJsonBody(request, 8192)).data; } catch (error) { return validationError(error, "Datos de registro inválidos."); }
 
   const email = normalizedEmail(credentials.email);
   const password = String(credentials.password || "");
@@ -156,6 +163,7 @@ async function signup(request, env) {
 
   if (!email) return json({ error: "Introduce un correo válido." }, { status: 400 });
   if (password !== passwordConfirmation) return json({ error: "Las contraseñas no coinciden." }, { status: 400 });
+  if (!(await verifyTurnstile(request, env, credentials.turnstileToken, "signup"))) return json({ error: "No fue posible verificar que eres una persona. Recarga el reto e inténtalo de nuevo." }, { status: 400 });
 
   const passwordError = passwordRequirements(password, email);
 
@@ -165,7 +173,7 @@ async function signup(request, env) {
   try {
     const user = await createEmailUser(env, email, await hashPassword(password, env.PASSWORD_PEPPER));
 
-    return json({ user: publicUser(user) }, { status: 201, headers: await sessionHeaders(user, env) });
+    return json({ user: publicUser(user) }, { status: 201, headers: await sessionHeaders(request, user, env) });
   } catch (error) {
     console.error("Signup failed", error);
 
@@ -177,25 +185,52 @@ async function login(request, env) {
 
   let credentials;
 
-  try { credentials = await request.json(); } catch { return json({ error: "Datos de acceso inválidos." }, { status: 400 }); }
+  try { credentials = (await readJsonBody(request, 8192)).data; } catch (error) { return validationError(error, "Datos de acceso inválidos."); }
 
   const email = normalizedEmail(credentials.email);
   const password = String(credentials.password || "");
-  let account = accounts(env).find((item) => normalizedEmail(item.email) === email);
+  const identifierHash = await sha256Hex(email || "invalid-email");
 
-  if (!account && env.DB && email) account = await getUserByEmail(env, email);
+  if (env.DB && await isLoginLocked(env, identifierHash)) {
+    await dummyPasswordCheck(password, env.PASSWORD_PEPPER || "");
+
+    return json({ error: "Demasiados intentos fallidos. Espera 15 minutos e inténtalo de nuevo." }, { status: 429, headers: { "Retry-After": "900" } });
+  }
+
+  if (!(await verifyTurnstile(request, env, credentials.turnstileToken, "login"))) return json({ error: "No fue posible verificar que eres una persona. Recarga el reto e inténtalo de nuevo." }, { status: 400 });
+
+  let account = env.DB && email ? await getUserByEmail(env, email) : null;
+  const legacyAccount = !account ? accounts(env).find((item) => normalizedEmail(item.email) === email) : null;
+
+  if (legacyAccount && env.DB) account = await ensureLegacyUser(env, { ...legacyAccount, email });
 
   const storedHash = account?.passwordHash ?? account?.password_hash;
   const isValid = Boolean(email && password && storedHash && await verifyPassword(password, storedHash, env.PASSWORD_PEPPER || ""));
 
-  if (!isValid) return json({ error: "Correo o contraseña incorrectos." }, { status: 401 });
+  if (!storedHash) await dummyPasswordCheck(password, env.PASSWORD_PEPPER || "");
+
+  if (!isValid) {
+    if (env.DB) await recordLoginFailure(env, identifierHash);
+
+    return json({ error: "Correo o contraseña incorrectos." }, { status: 401 });
+  }
+
+  if (env.DB) await clearLoginFailures(env, identifierHash);
 
   const user = { ...account, email, role: account.role === "admin" ? "admin" : "member" };
 
-  return json({ user: publicUser(user) }, { headers: await sessionHeaders(user, env) });
+  return json({ user: publicUser(user) }, { headers: await sessionHeaders(request, user, env) });
 }
 
 export async function handleAuth(request, env, pathname) {
+
+  const sensitiveRoute = ["/api/auth/login", "/api/auth/signup", "/api/auth/logout"].includes(pathname);
+
+  if (sensitiveRoute && !isSameOriginMutation(request)) return json({ error: "Origen de la petición no permitido." }, { status: 403 });
+
+  const limitedRoute = pathname === "/api/auth/login" || pathname === "/api/auth/signup" || /^\/api\/auth\/oauth\/(google|discord)$/.test(pathname);
+
+  if (limitedRoute && !(await consumeRateLimit(env.AUTH_RATE_LIMITER, request, pathname))) return rateLimited();
 
   if (pathname === "/api/auth/session" && request.method === "GET") {
     const session = await getSession(request, env);
@@ -203,8 +238,19 @@ export async function handleAuth(request, env, pathname) {
     return json({ user: session ? publicUser(session) : { isAdmin: false, isOwner: false } });
   }
 
-  if (pathname === "/api/auth/providers" && request.method === "GET") return json({ providers: oauthProviders(env) });
-  if (pathname === "/api/auth/logout" && request.method === "POST") return json({ success: true }, { headers: { "Set-Cookie": sessionCookie("", 0) } });
+  if (pathname === "/api/auth/providers" && request.method === "GET") return json({ providers: oauthProviders(env), turnstileSiteKey: turnstileSiteKey(env) });
+  if (pathname === "/api/auth/logout" && request.method === "POST") {
+    const token = readCookie(request, sessionCookieName(request)) || readCookie(request, "agm_session");
+
+    if (token && env.DB) await deleteAuthSession(env, await sha256Hex(token));
+
+    const headers = new Headers();
+
+    headers.append("Set-Cookie", sessionCookie(request, "", 0));
+    if (sessionCookieName(request) !== "agm_session") headers.append("Set-Cookie", sessionCookie(request, "", 0, "agm_session"));
+
+    return json({ success: true }, { headers });
+  }
   if (pathname === "/api/auth/signup" && request.method === "POST") return signup(request, env);
   if (pathname === "/api/auth/login" && request.method === "POST") return login(request, env);
 
@@ -215,7 +261,7 @@ export async function handleAuth(request, env, pathname) {
   const startMatch = pathname.match(/^\/api\/auth\/oauth\/(google|discord)$/);
 
   if (startMatch && request.method === "GET") {
-    try { return await beginOAuth(request, env, startMatch[1]); } catch (error) { return oauthErrorRedirect(request, error); }
+    try { return await beginOAuth(request, env, startMatch[1]); } catch (error) { return oauthErrorRedirect(request, startMatch[1], error); }
   }
 
   return null;

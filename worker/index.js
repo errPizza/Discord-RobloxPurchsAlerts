@@ -6,6 +6,7 @@ import { sendDiscord, weeklySummary } from "./services/discord.js";
 import { getGroupIconUrl } from "./services/roblox.js";
 import { getPublicSite, getWeeklyStats } from "./database/database.js";
 import { getWorkerEnabled } from "./database/database.js";
+import { applySecurityHeaders } from "./services/security.js";
 import { json } from "./utils/response.js";
 
 export default {
@@ -13,30 +14,35 @@ export default {
   async fetch(request, env) {
 
     const { pathname } = new URL(request.url);
+    const requestId = crypto.randomUUID();
 
     try {
 
-      if (pathname.startsWith("/api/auth/")) return (await handleAuth(request, env, pathname)) || json({ error: "Ruta no encontrada." }, { status: 404 });
+      let response;
 
-      if (pathname.startsWith("/api/admin/")) return handleAdmin(request, env, pathname);
+      if (pathname.startsWith("/api/auth/")) response = (await handleAuth(request, env, pathname)) || json({ error: "Ruta no encontrada." }, { status: 404 });
 
-      if (request.method === "GET" && pathname === "/api/site") return json(await getPublicSite(env));
+      else if (pathname.startsWith("/api/admin/")) response = await handleAdmin(request, env, pathname);
 
-      if (request.method === "GET" && pathname === "/api/status") {
+      else if (request.method === "GET" && pathname === "/api/site") response = json(await getPublicSite(env));
+
+      else if (request.method === "GET" && pathname === "/api/status") {
 
         const enabled = await getWorkerEnabled(env);
 
-        return json({ name: "Another Game More API", status: enabled ? "online" : "paused", messagesEnabled: enabled });
+        response = json({ name: "Another Game More API", status: enabled ? "online" : "paused", messagesEnabled: enabled });
       }
 
-      if (request.method === "GET" && env.ASSETS) return env.ASSETS.fetch(request);
+      else if (["GET", "HEAD"].includes(request.method) && env.ASSETS) response = await env.ASSETS.fetch(request);
 
-      return handlePublicWebhook(request, env, pathname);
+      else response = await handlePublicWebhook(request, env, pathname);
+
+      return applySecurityHeaders(response, request, requestId);
 
     } catch (error) {
-      console.error(error);
+      console.error(`[REQUEST ${requestId}]`, error instanceof Error ? `${error.name}: ${error.message}` : "Unknown error");
 
-      return json({ success: false, error: "Error interno del Worker." }, { status: 500 });
+      return applySecurityHeaders(json({ success: false, error: "Error interno del Worker.", requestId }, { status: 500 }), request, requestId);
     }
 
   },

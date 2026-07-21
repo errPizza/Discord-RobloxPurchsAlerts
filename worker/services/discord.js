@@ -41,10 +41,16 @@ function trimEmbedText(value, maximum = 1024) {
 export async function sendDiscord(webhookUrl, payload) {
   if (!webhookUrl) throw new Error("El webhook correspondiente no está configurado.");
 
-  const response = await fetch(webhookUrl, {
+  const url = new URL(webhookUrl);
+  const validHost = url.hostname === "discord.com" || url.hostname.endsWith(".discord.com") || url.hostname === "discordapp.com" || url.hostname.endsWith(".discordapp.com");
+
+  if (url.protocol !== "https:" || !validHost || !url.pathname.startsWith("/api/webhooks/")) throw new Error("La URL del webhook de Discord no es válida.");
+
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!response.ok) throw new Error(await response.text());

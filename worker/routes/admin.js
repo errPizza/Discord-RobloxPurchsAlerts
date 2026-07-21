@@ -3,11 +3,16 @@ import { getAnalytics, getCompleteWeeklyHistory } from "../services/analytics.js
 import { getRobloxUserProfile } from "../services/roblox.js";
 import { emptyStats, getWeekKey, syncLegacyStats } from "../services/stats.js";
 import { requireAdmin, requireOwner } from "./auth.js";
+import { consumeRateLimit, isSameOriginMutation, rateLimited, readJsonBody, validationError } from "../services/security.js";
 import { json } from "../utils/response.js";
 
 export async function handleAdmin(request, env, pathname) {
 
-  if (!(await requireAdmin(request, env))) return json({ error: "Esta sección es solo para administradores." }, { status: 401 });
+  const admin = await requireAdmin(request, env);
+
+  if (!admin) return json({ error: "Esta sección es solo para administradores." }, { status: 401 });
+  if (!isSameOriginMutation(request)) return json({ error: "Origen de la petición no permitido." }, { status: 403 });
+  if (!(await consumeRateLimit(env.ADMIN_RATE_LIMITER, request, pathname, admin.id || admin.email))) return rateLimited();
 
   if (pathname.startsWith("/api/admin/promote/")) {
 
@@ -52,7 +57,7 @@ export async function handleAdmin(request, env, pathname) {
 
     let payload;
 
-    try { payload = await request.json(); } catch { return json({ error: "Los valores enviados no son válidos." }, { status: 400 }); }
+    try { payload = (await readJsonBody(request, 8192)).data; } catch (error) { return validationError(error, "Los valores enviados no son válidos."); }
 
     const values = {};
 
@@ -82,7 +87,7 @@ export async function handleAdmin(request, env, pathname) {
 
     let payload;
 
-    try { payload = await request.json(); } catch { return json({ error: "Configuración inválida." }, { status: 400 }); }
+    try { payload = (await readJsonBody(request, 4096)).data; } catch (error) { return validationError(error, "Configuración inválida."); }
 
     if (typeof payload.enabled !== "boolean") return json({ error: "El estado debe ser verdadero o falso." }, { status: 400 });
 
@@ -98,7 +103,7 @@ export async function handleAdmin(request, env, pathname) {
 
     let payload;
 
-    try { payload = await request.json(); } catch { return json({ error: "El UserId enviado no es válido." }, { status: 400 }); }
+    try { payload = (await readJsonBody(request, 4096)).data; } catch (error) { return validationError(error, "El UserId enviado no es válido."); }
 
     const userId = String(payload.userId || "").trim();
 

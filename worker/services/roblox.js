@@ -3,7 +3,7 @@ export async function getAvatarUrl(userId) {
   if (!userId) return null;
 
   try {
-    const response = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${encodeURIComponent(userId)}&size=420x420&format=Png&isCircular=false`);
+    const response = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${encodeURIComponent(userId)}&size=420x420&format=Png&isCircular=false`, { signal: AbortSignal.timeout(8000) });
 
     return response.ok ? (await response.json()).data?.[0]?.imageUrl || null : null;
   } catch (error) {
@@ -16,7 +16,7 @@ export async function getAvatarUrl(userId) {
 async function getThumbnailUrl(url, errorLabel) {
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
 
     return response.ok ? (await response.json()).data?.[0]?.imageUrl || null : null;
   } catch (error) {
@@ -47,7 +47,7 @@ export async function getRobloxUserProfile(userId) {
 
   const normalized = String(userId);
   const [profileResponse, avatarUrl] = await Promise.all([
-    fetch(`https://users.roblox.com/v1/users/${encodeURIComponent(normalized)}`, { headers: { Accept: "application/json" } }),
+    fetch(`https://users.roblox.com/v1/users/${encodeURIComponent(normalized)}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) }),
     getAvatarUrl(normalized),
   ]);
 
