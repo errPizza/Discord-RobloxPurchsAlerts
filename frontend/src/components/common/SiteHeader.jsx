@@ -10,6 +10,21 @@ export default function SiteHeader() {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
   const [activeHash, setActiveHash] = useState("#inicio");
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    const closeWithEscape = (event) => { if (event.key === "Escape") setMenuOpen(false); };
+
+    document.addEventListener("keydown", closeWithEscape);
+
+    return () => document.removeEventListener("keydown", closeWithEscape);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (pathname !== "/") return undefined;
@@ -48,17 +63,23 @@ export default function SiteHeader() {
 
     event.preventDefault();
     setActiveHash(hash);
+    setMenuOpen(false);
     scrollToSection(hash);
   };
 
   return <header className="site-header">
     <StudioLogo />
-    <nav aria-label="Navegación principal">
-      {links.map(([label, href]) => <a className={pathname === "/" && activeHash === href ? "active" : ""} href={pathname === "/" ? href : `/${href}`} onClick={(event) => navigateToSection(event, href)} key={label}>{label}</a>)}
-    </nav>
-    <div className="header-actions">
-      {user ? <button className="button outline" onClick={logout}>Cerrar sesión</button> : <Link className="button outline" to="/login">Iniciar sesión</Link>}
-      {user?.isAdmin && <Link className="button red" to="/dashboard">Dashboard <b>›</b></Link>}
+    <div className={`site-menu-panel${menuOpen ? " is-open" : ""}`} id="site-menu">
+      <nav aria-label="Navegación principal">
+        {links.map(([label, href]) => <a className={pathname === "/" && activeHash === href ? "active" : ""} href={pathname === "/" ? href : `/${href}`} onClick={(event) => navigateToSection(event, href)} key={label}>{label}</a>)}
+      </nav>
+      <div className="header-actions">
+        {user ? <button className="button outline" type="button" onClick={() => { setMenuOpen(false); logout(); }}>Cerrar sesión</button> : <Link className="button outline" to="/login">Iniciar sesión</Link>}
+        {user?.isAdmin && <Link className="button red" to="/dashboard">Dashboard <b>›</b></Link>}
+      </div>
     </div>
+    <button className="mobile-menu-toggle" type="button" aria-controls="site-menu" aria-expanded={menuOpen} aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"} onClick={() => setMenuOpen((current) => !current)}>
+      <span /><span /><span />
+    </button>
   </header>;
 }
