@@ -4,7 +4,7 @@ import StudioLogo from "./StudioLogo.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
 import { scrollToSection } from "../../utils/scroll.js";
 
-const links = [["Inicio", "#inicio"], ["Nosotros", "#nosotros"], ["Juegos", "#juegos"], ["Logros", "#logros"], ["Equipo", "#equipo"], ["Contacto", "#contacto"]];
+const links = [["Inicio", "#inicio"], ["Logros", "#logros"], ["Nosotros", "#nosotros"], ["Juegos", "#juegos"], ["Equipo", "#equipo"], ["Contacto", "#contacto"]];
 
 export default function SiteHeader() {
   const { user, logout } = useAuth();

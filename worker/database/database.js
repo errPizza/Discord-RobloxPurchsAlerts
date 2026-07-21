@@ -178,7 +178,8 @@ export async function getPublicSite(env) {
 
   const [settings, contacts] = await Promise.all([
     env.DB.prepare("SELECT key, value FROM site_settings").all(),
-    env.DB.prepare("SELECT id, name, role, email, discord, initials, display_order FROM contacts WHERE is_visible = 1 ORDER BY display_order, id").all(),
+    env.DB.prepare(`SELECT id, name, role, email, discord, initials, description, roblox_url AS robloxUrl,
+      image_key AS imageKey, display_order FROM contacts WHERE is_visible = 1 ORDER BY display_order, id`).all(),
   ]);
 
   return { settings: Object.fromEntries((settings.results || []).map((row) => [row.key, row.value])), contacts: contacts.results || [] };

@@ -3,6 +3,7 @@ import { handleAuth } from "./routes/auth.js";
 import { handlePublicWebhook } from "./routes/public.js";
 import { getWeekKey } from "./services/stats.js";
 import { sendDiscord, weeklySummary } from "./services/discord.js";
+import { getGroupIconUrl } from "./services/roblox.js";
 import { getPublicSite, getWeeklyStats } from "./database/database.js";
 import { getWorkerEnabled } from "./database/database.js";
 import { json } from "./utils/response.js";
@@ -50,7 +51,7 @@ export default {
 
     const stats = await getWeeklyStats(env, getWeekKey(lastWeek));
 
-    if (stats && env.STATS_WEBHOOK) await sendDiscord(env.STATS_WEBHOOK, weeklySummary(stats));
+    if (stats && env.STATS_WEBHOOK) await sendDiscord(env.STATS_WEBHOOK, weeklySummary(stats, await getGroupIconUrl()));
 
   },
   

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import worker from "../index.js";
+import { bulkMessage, donationMessage, singleMessage, weeklySummary } from "../services/discord.js";
 import { passwordRequirements } from "../services/password.js";
 import { MY_CREATOR_ID, updateWeeklyStats } from "../services/stats.js";
 
@@ -216,6 +217,23 @@ test("las estadísticas se incrementan de forma acumulativa", async () => {
     { spent: 290, revenue: 191, single: 1, bulk: 1, donations: 1 },
   );
   assert.equal(legacyStats.get(stats.week).revenue, 191);
+});
+
+test("los embeds conservan el estilo detallado del Worker original", () => {
+
+  const donation = donationMessage({ displayName: "Pizza", username: "err_Lo2sDat4", userId: 4093162315, amount: 100 }, "https://example.com/avatar.png", 3, "https://example.com/studio.png");
+  const single = singleMessage({ displayName: "Pizza", username: "err_Lo2sDat4", item: { id: 10, name: "Item", price: 50, revenue: 35, percent: 0.7 } }, "https://example.com/avatar.png", 4, "https://example.com/item.png", "https://example.com/studio.png");
+  const bulk = bulkMessage({ displayName: "Pizza", username: "err_Lo2sDat4", itemCount: 2, totalRobux: 80, totalRevenue: 40, items: [{ name: "Uno", price: 50, revenue: 25 }, { name: "Dos", price: 30, revenue: 15 }] }, "https://example.com/avatar.png", 2, "https://example.com/studio.png");
+  const summary = weeklySummary({ week: "2026-W30", spent: 230, revenue: 120, single: 3, bulk: 1, donations: 2 }, "https://example.com/studio.png");
+
+  assert.match(donation.content, /Another Game More Studio/);
+  assert.match(donation.embeds[0].title, /Donación verificada/);
+  assert.equal(donation.embeds[0].thumbnail.url, "https://example.com/studio.png");
+  assert.match(single.embeds[0].fields[3].value, /70%/);
+  assert.equal(single.embeds[0].thumbnail.url, "https://example.com/item.png");
+  assert.match(bulk.embeds[0].fields[3].value, /Uno/);
+  assert.match(summary.embeds[0].title, /Resumen semanal de ganancias/);
+  assert.equal(summary.embeds[0].fields.length, 6);
 });
 
 test("la ruta de base de datos devuelve el contrato usado por React", async () => {

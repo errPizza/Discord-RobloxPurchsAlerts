@@ -13,6 +13,36 @@ export async function getAvatarUrl(userId) {
   }
 }
 
+async function getThumbnailUrl(url, errorLabel) {
+
+  try {
+    const response = await fetch(url);
+
+    return response.ok ? (await response.json()).data?.[0]?.imageUrl || null : null;
+  } catch (error) {
+    console.error(errorLabel, error);
+
+    return null;
+  }
+}
+
+export async function getItemThumbnailUrl(item = {}) {
+
+  if (!item.id) return null;
+
+  const isBundle = String(item.AssetType || item.assetType || "").toLowerCase() === "bundle";
+  const endpoint = isBundle
+    ? `https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=${encodeURIComponent(item.id)}&size=420x420&format=Png&isCircular=false`
+    : `https://thumbnails.roblox.com/v1/assets-thumbnail?assetIds=${encodeURIComponent(item.id)}&size=420x420&format=Png&isCircular=false`;
+
+  return getThumbnailUrl(endpoint, "[ROBLOX_ITEM_THUMBNAIL]");
+}
+
+export async function getGroupIconUrl(groupId = 16939863) {
+
+  return getThumbnailUrl(`https://thumbnails.roblox.com/v1/groups/icons?groupIds=${encodeURIComponent(groupId)}&size=420x420&format=Png&isCircular=false`, "[ROBLOX_GROUP_ICON]");
+}
+
 export async function getRobloxUserProfile(userId) {
 
   const normalized = String(userId);
