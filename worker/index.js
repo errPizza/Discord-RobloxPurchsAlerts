@@ -33,7 +33,14 @@ export default {
         response = json({ name: "Another Game More API", status: enabled ? "online" : "paused", messagesEnabled: enabled });
       }
 
-      else if (["GET", "HEAD"].includes(request.method) && env.ASSETS) response = await env.ASSETS.fetch(request);
+      else if (["GET", "HEAD"].includes(request.method) && env.ASSETS) {
+
+        const assetResponse = await env.ASSETS.fetch(request.method === "HEAD" ? new Request(request, { method: "GET" }) : request);
+
+        response = request.method === "HEAD"
+          ? new Response(null, { status: assetResponse.status, statusText: assetResponse.statusText, headers: assetResponse.headers })
+          : assetResponse;
+      }
 
       else response = await handlePublicWebhook(request, env, pathname);
 

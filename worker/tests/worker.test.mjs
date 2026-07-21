@@ -343,9 +343,12 @@ test("el Worker sirve React y mantiene el estado en /api/status", async () => {
   };
   const env = { ASSETS, DB: new FakeD1() };
   const pageResponse = await worker.fetch(new Request("https://api.example.com/dashboard/stats"), env);
+  const headResponse = await worker.fetch(new Request("https://api.example.com/", { method: "HEAD" }), env);
   const statusResponse = await worker.fetch(new Request("https://api.example.com/api/status"), env);
 
   assert.equal(pageResponse.status, 200);
+  assert.equal(headResponse.status, 200);
+  assert.equal(await headResponse.text(), "");
   assert.equal(await pageResponse.text(), "<main>/dashboard/stats</main>");
   assert.equal(pageResponse.headers.get("X-Frame-Options"), "DENY");
   assert.match(pageResponse.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
