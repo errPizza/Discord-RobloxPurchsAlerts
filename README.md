@@ -16,3 +16,18 @@ Para saber que pedo con las comisiones y demas, tambien tiene stats semanales :D
 > [!TIP]
 > Para agregar mas variables encriptadas ve a Cloudflare y añadele en Workers & Pages -> Settigns -> Variables and secrets :D
 
+## Autenticación
+
+El acceso por correo utiliza `SESSION_SECRET` y `PASSWORD_PEPPER`. Para activar los proveedores sociales en `prchsalerts`, configura también estos secretos:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `DISCORD_CLIENT_ID`
+- `DISCORD_CLIENT_SECRET`
+
+Registra exactamente estas URLs de redirección en cada proveedor:
+
+- Google: `https://prchsalerts.kikinttrex0231.workers.dev/api/auth/oauth/google/callback`
+- Discord: `https://prchsalerts.kikinttrex0231.workers.dev/api/auth/oauth/discord/callback`
+
+Las cuentas nuevas reciben el rol `member`. Solo los administradores acceden al dashboard y únicamente `kikinttrex0231@gmail.com` puede promover usuarios desde la sección **Promote**.

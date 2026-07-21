@@ -34,12 +34,23 @@ class FakeD1 {
       bind(...values) {
         return {
           first: async () => {
-            if (sql.includes("FROM users WHERE email")) return database.user;
+            if (sql.includes("FROM users WHERE email")) return database.user?.email.toLowerCase() === String(values[0]).toLowerCase() ? database.user : null;
+            if (sql.includes("FROM users WHERE id")) return database.user?.id === values[0] ? database.user : null;
+            if (sql.includes("FROM oauth_accounts")) return null;
             if (sql.includes("FROM daily_stats WHERE day = ?")) return database.dailyRecords.get(values[0]) || null;
 
             return database.weeklyRecord;
           },
           all: async () => {
+            if (sql.includes("FROM users u LEFT JOIN oauth_accounts")) {
+              const query = values[0];
+              const user = database.user;
+
+              if (!user || (query && !user.email.toLowerCase().includes(query) && !String(user.display_name || "").toLowerCase().includes(query))) return { results: [] };
+
+              return { results: [{ id: user.id, email: user.email, role: user.role, displayName: user.display_name, createdAt: user.created_at, hasPassword: 1, oauthProviders: null }] };
+            }
+
             if (!sql.includes("FROM daily_stats WHERE day BETWEEN")) throw new Error(`Consulta bind().all() no contemplada: ${sql}`);
 
             const [start, end] = values;
@@ -48,6 +59,22 @@ class FakeD1 {
             return { results };
           },
           run: async () => {
+            if (sql.includes("INSERT INTO users") || sql.includes("INSERT OR IGNORE INTO users")) {
+              const [email, passwordHash, displayName] = values;
+
+              if (!database.user) database.user = { id: 1, email, password_hash: passwordHash, role: "member", display_name: displayName, created_at: Math.floor(Date.now() / 1000) };
+
+              return { success: true };
+            }
+
+            if (sql.includes("UPDATE users SET role = 'admin'")) {
+              if (database.user?.id === values[0]) database.user.role = "admin";
+
+              return { success: true };
+            }
+
+            if (sql.includes("INSERT OR IGNORE INTO oauth_accounts")) return { success: true };
+
             if (sql.includes("INSERT INTO site_settings")) {
               database.settings.set("worker_enabled", values[0]);
 
@@ -212,6 +239,88 @@ test("un administrador almacenado en D1 puede iniciar sesión", async () => {
   assert.equal(data.user.email, "admin@example.com");
   assert.equal(data.user.isAdmin, true);
   assert.match(response.headers.get("Set-Cookie"), /^agm_session=/);
+});
+
+test("un usuario puede registrarse con correo y recibe rol member", async () => {
+
+  const DB = new FakeD1();
+  const env = { DB, SESSION_SECRET: "test-session-secret", PASSWORD_PEPPER: "test-password-pepper" };
+  const password = "Una frase larga y segura 2026";
+  const response = await worker.fetch(new Request("https://api.example.com/api/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "member@example.com", password, passwordConfirmation: password }),
+  }), env);
+  const data = await response.json();
+  const cookie = response.headers.get("Set-Cookie").split(";", 1)[0];
+  const sessionResponse = await worker.fetch(new Request("https://api.example.com/api/auth/session", { headers: { Cookie: cookie } }), env);
+  const session = await sessionResponse.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(data.user.role, "member");
+  assert.equal(data.user.isAdmin, false);
+  assert.match(DB.user.password_hash, /^pbkdf2-sha256\$600000\$/);
+  assert.equal(session.user.email, "member@example.com");
+  assert.equal(session.user.isAdmin, false);
+});
+
+test("el registro aplica la política de contraseña y exige confirmación", async () => {
+
+  const env = { DB: new FakeD1(), SESSION_SECRET: "test-session-secret", PASSWORD_PEPPER: "test-password-pepper" };
+  const shortResponse = await worker.fetch(new Request("https://api.example.com/api/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "member@example.com", password: "muy corta", passwordConfirmation: "muy corta" }),
+  }), env);
+  const mismatchResponse = await worker.fetch(new Request("https://api.example.com/api/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "member@example.com", password: "Una frase suficientemente larga", passwordConfirmation: "Una frase completamente distinta" }),
+  }), env);
+
+  assert.equal(shortResponse.status, 400);
+  assert.match((await shortResponse.json()).error, /15 caracteres/);
+  assert.equal(mismatchResponse.status, 400);
+  assert.match((await mismatchResponse.json()).error, /no coinciden/);
+});
+
+test("solo el propietario puede listar usuarios y promoverlos", async () => {
+
+  const DB = new FakeD1();
+  DB.user = { id: 8, email: "member@example.com", password_hash: "hash", role: "member", display_name: "Member", created_at: 1 };
+  const owner = await adminSession(DB);
+  owner.env.ACCOUNT_CONFIG = JSON.stringify([{ email: "kikinttrex0231@gmail.com", passwordHash: await passwordHash("test-password", "test-pepper"), role: "admin" }]);
+  const ownerLogin = await worker.fetch(new Request("https://api.example.com/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "kikinttrex0231@gmail.com", password: "test-password" }),
+  }), owner.env);
+  const ownerCookie = ownerLogin.headers.get("Set-Cookie").split(";", 1)[0];
+  const listResponse = await worker.fetch(new Request("https://api.example.com/api/admin/promote/users", { headers: { Cookie: ownerCookie } }), owner.env);
+  const promoteResponse = await worker.fetch(new Request("https://api.example.com/api/admin/promote/users/8", { method: "PUT", headers: { Cookie: ownerCookie } }), owner.env);
+  const regularAdmin = await adminSession(DB);
+  const forbiddenResponse = await worker.fetch(new Request("https://api.example.com/api/admin/promote/users", { headers: { Cookie: regularAdmin.cookie } }), regularAdmin.env);
+
+  assert.equal(listResponse.status, 200);
+  assert.equal((await listResponse.json()).users[0].email, "member@example.com");
+  assert.equal(promoteResponse.status, 200);
+  assert.equal(DB.user.role, "admin");
+  assert.equal(forbiddenResponse.status, 403);
+});
+
+test("OAuth informa proveedores disponibles e inicia con state seguro", async () => {
+
+  const unavailable = await worker.fetch(new Request("https://api.example.com/api/auth/providers"), {});
+  const availableEnv = { GOOGLE_CLIENT_ID: "google-id", GOOGLE_CLIENT_SECRET: "google-secret", SESSION_SECRET: "session-secret" };
+  const start = await worker.fetch(new Request("https://api.example.com/api/auth/oauth/google"), availableEnv);
+  const destination = new URL(start.headers.get("Location"));
+
+  assert.deepEqual((await unavailable.json()).providers, { google: false, discord: false });
+  assert.equal(start.status, 302);
+  assert.equal(destination.origin, "https://accounts.google.com");
+  assert.equal(destination.searchParams.get("scope"), "openid email profile");
+  assert.ok(destination.searchParams.get("state"));
+  assert.match(start.headers.get("Set-Cookie"), /^agm_oauth_attempt=/);
 });
 
 test("las respuestas de error tienen estado y cuerpo JSON", async () => {

@@ -6,6 +6,12 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => { auth.getSession().then(({ user: sessionUser }) => setUser(sessionUser?.email ? sessionUser : null)).catch(() => setUser(null)).finally(() => setLoading(false)); }, []);
-  const value = useMemo(() => ({ user, loading, login: async (email, password) => { const data = await auth.login(email, password); setUser(data.user); return data.user; }, logout: async () => { await auth.logout(); setUser(null); } }), [user, loading]);
+  const value = useMemo(() => ({
+    user,
+    loading,
+    login: async (email, password) => { const data = await auth.login(email, password); setUser(data.user); return data.user; },
+    signup: async (email, password, passwordConfirmation) => { const data = await auth.signup(email, password, passwordConfirmation); setUser(data.user); return data.user; },
+    logout: async () => { await auth.logout(); setUser(null); },
+  }), [user, loading]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -12,7 +12,8 @@ export default function DashboardLayout() {
   }, [pathname]);
 
   if (loading) return <div className="loading">Cargando sesión…</div>;
-  if (!user?.isAdmin) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.isAdmin) return <Navigate to="/" replace />;
 
   return <div className="dashboard-shell">
     <aside className="dashboard-sidebar">
@@ -23,6 +24,7 @@ export default function DashboardLayout() {
         <NavLink to="/dashboard/stats"><span>02</span>Stats</NavLink>
         <NavLink to="/dashboard/worker"><span>03</span>Control Worker</NavLink>
         <NavLink to="/dashboard/database"><span>04</span>DataBase</NavLink>
+        {user.isOwner && <NavLink to="/dashboard/promote"><span>05</span>Promote</NavLink>}
       </nav>
       <button onClick={logout}>Cerrar sesión <b>↗</b></button>
     </aside>

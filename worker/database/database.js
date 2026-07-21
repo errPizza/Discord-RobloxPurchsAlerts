@@ -3,6 +3,69 @@ export async function getUserByEmail(env, email) {
   return env.DB.prepare("SELECT id, email, password_hash, role, display_name FROM users WHERE email = ? COLLATE NOCASE").bind(email).first();
 }
 
+export async function getUserById(env, id) {
+
+  return env.DB.prepare("SELECT id, email, password_hash, role, display_name FROM users WHERE id = ?").bind(id).first();
+}
+
+export async function createEmailUser(env, email, passwordHash) {
+
+  const displayName = email.split("@", 1)[0].slice(0, 80);
+
+  await env.DB.prepare("INSERT INTO users (email, password_hash, role, display_name) VALUES (?, ?, 'member', ?)").bind(email, passwordHash, displayName).run();
+
+  return getUserByEmail(env, email);
+}
+
+export async function getUserByOAuth(env, provider, providerUserId) {
+
+  return env.DB.prepare(`SELECT u.id, u.email, u.password_hash, u.role, u.display_name
+    FROM oauth_accounts oauth JOIN users u ON u.id = oauth.user_id
+    WHERE oauth.provider = ? AND oauth.provider_user_id = ?`).bind(provider, providerUserId).first();
+}
+
+export async function getOrCreateOAuthUser(env, { provider, providerUserId, email, displayName, placeholderHash }) {
+
+  const existingIdentity = await getUserByOAuth(env, provider, providerUserId);
+
+  if (existingIdentity) return existingIdentity;
+
+  await env.DB.prepare(`INSERT OR IGNORE INTO users (email, password_hash, role, display_name)
+    VALUES (?, ?, 'member', ?)`).bind(email, placeholderHash, displayName || email.split("@", 1)[0]).run();
+
+  const user = await getUserByEmail(env, email);
+
+  if (!user) throw new Error("No fue posible crear la cuenta OAuth.");
+
+  await env.DB.prepare(`INSERT OR IGNORE INTO oauth_accounts (user_id, provider, provider_user_id)
+    VALUES (?, ?, ?)`).bind(user.id, provider, providerUserId).run();
+
+  return (await getUserByOAuth(env, provider, providerUserId)) || user;
+}
+
+export async function listUsers(env, query = "") {
+
+  const normalized = query.trim().toLowerCase().slice(0, 100);
+  const result = await env.DB.prepare(`SELECT u.id, u.email, u.role, u.display_name AS displayName, u.created_at AS createdAt,
+      CASE WHEN u.password_hash LIKE 'oauth-only$%' THEN 0 ELSE 1 END AS hasPassword,
+      GROUP_CONCAT(DISTINCT oauth.provider) AS oauthProviders
+    FROM users u LEFT JOIN oauth_accounts oauth ON oauth.user_id = u.id
+    WHERE ? = '' OR instr(lower(u.email), ?) > 0 OR instr(lower(COALESCE(u.display_name, '')), ?) > 0
+    GROUP BY u.id ORDER BY CASE u.role WHEN 'admin' THEN 0 ELSE 1 END, lower(u.email) LIMIT 100`).bind(normalized, normalized, normalized).all();
+
+  return (result.results || []).map(({ hasPassword, oauthProviders, ...user }) => ({
+    ...user,
+    providers: [...(hasPassword ? ["email"] : []), ...(oauthProviders ? oauthProviders.split(",") : [])],
+  }));
+}
+
+export async function promoteUser(env, userId) {
+
+  await env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?").bind(userId).run();
+
+  return getUserById(env, userId);
+}
+
 export async function getWeeklyStats(env, weekKey) {
 
   return env.DB.prepare("SELECT week, created_at AS createdAt, spent, revenue, single_count AS single, bulk_count AS bulk, donations FROM weekly_stats WHERE week = ?").bind(weekKey).first();
