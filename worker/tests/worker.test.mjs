@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import worker from "../index.js";
+import { passwordRequirements } from "../services/password.js";
 import { MY_CREATOR_ID, updateWeeklyStats } from "../services/stats.js";
 
 class FakeD1 {
@@ -245,7 +246,7 @@ test("un usuario puede registrarse con correo y recibe rol member", async () => 
 
   const DB = new FakeD1();
   const env = { DB, SESSION_SECRET: "test-session-secret", PASSWORD_PEPPER: "test-password-pepper" };
-  const password = "Una frase larga y segura 2026";
+  const password = "Una frase larga y segura 2026!";
   const response = await worker.fetch(new Request("https://api.example.com/api/auth/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -270,7 +271,7 @@ test("el registro aplica la política de contraseña y exige confirmación", asy
   const shortResponse = await worker.fetch(new Request("https://api.example.com/api/auth/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "member@example.com", password: "muy corta", passwordConfirmation: "muy corta" }),
+    body: JSON.stringify({ email: "member@example.com", password: "Aa1!", passwordConfirmation: "Aa1!" }),
   }), env);
   const mismatchResponse = await worker.fetch(new Request("https://api.example.com/api/auth/signup", {
     method: "POST",
@@ -279,9 +280,18 @@ test("el registro aplica la política de contraseña y exige confirmación", asy
   }), env);
 
   assert.equal(shortResponse.status, 400);
-  assert.match((await shortResponse.json()).error, /15 caracteres/);
+  assert.match((await shortResponse.json()).error, /8 caracteres/);
   assert.equal(mismatchResponse.status, 400);
   assert.match((await mismatchResponse.json()).error, /no coinciden/);
+});
+
+test("la contraseña exige mayúscula, dos minúsculas, número y signo", () => {
+
+  assert.match(passwordRequirements("abcdefg1!"), /mayúscula/);
+  assert.match(passwordRequirements("AAAAAAAa1!"), /dos minúsculas/);
+  assert.match(passwordRequirements("Abcdefgh!"), /número/);
+  assert.match(passwordRequirements("Abcdefg1"), /signo/);
+  assert.equal(passwordRequirements("Abcdefg1!"), null);
 });
 
 test("solo el propietario puede listar usuarios y promoverlos", async () => {

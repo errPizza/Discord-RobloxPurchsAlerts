@@ -4,7 +4,7 @@ import StudioLogo from "../components/common/StudioLogo.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 import { getProviders } from "../services/auth.js";
 
-const commonPasswords = new Set(["123456789012345", "password123456", "contraseña123456", "anothergamemore"]);
+const commonPasswords = new Set(["password1!", "contraseña1!", "admin123!", "qwerty123!", "123456789012345", "password123456", "contraseña123456", "anothergamemore"]);
 
 export default function Signup() {
   const { user, signup } = useAuth();
@@ -23,7 +23,11 @@ export default function Signup() {
     const emailName = email.trim().toLowerCase().split("@", 1)[0];
 
     return [
-      { label: "15 caracteres como mínimo", valid: [...password].length >= 15 },
+      { label: "8 caracteres como mínimo", valid: [...password].length >= 8 },
+      { label: "Al menos 1 mayúscula", valid: /\p{Lu}/u.test(password) },
+      { label: "Al menos 2 minúsculas", valid: (password.match(/\p{Ll}/gu) || []).length >= 2 },
+      { label: "Al menos 1 número", valid: /\p{Nd}/u.test(password) },
+      { label: "Al menos 1 signo", valid: /[^\p{L}\p{N}\s]/u.test(password) },
       { label: "No supera 128 caracteres", valid: password.length > 0 && [...password].length <= 128 },
       { label: "No contiene tu correo ni es común", valid: password.length > 0 && !commonPasswords.has(password.toLowerCase()) && !(emailName.length >= 4 && password.toLowerCase().includes(emailName)) },
       { label: "Ambas contraseñas coinciden", valid: confirmation.length > 0 && password === confirmation },
@@ -63,8 +67,8 @@ export default function Signup() {
       <div className="auth-divider"><span>o utiliza tu correo</span></div>
       <div className="login-fields">
         <label>Correo<input name="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required disabled={submitting} /></label>
-        <label>Contraseña<input name="password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength="15" maxLength="128" required disabled={submitting} /></label>
-        <label>Repetir contraseña<input name="passwordConfirmation" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} minLength="15" maxLength="128" required disabled={submitting} /></label>
+        <label>Contraseña<input name="password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength="8" maxLength="128" required disabled={submitting} /></label>
+        <label>Repetir contraseña<input name="passwordConfirmation" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} minLength="8" maxLength="128" required disabled={submitting} /></label>
       </div>
       <ul className="password-checks" aria-label="Condiciones de la contraseña">
         {checks.map((check) => <li className={check.valid ? "is-valid" : ""} key={check.label}><span>{check.valid ? "✓" : "·"}</span>{check.label}</li>)}
@@ -78,4 +82,3 @@ export default function Signup() {
     </form>
   </div>;
 }
-

@@ -32,6 +32,8 @@ Registra exactamente estas URLs de redirección en cada proveedor:
 
 Las cuentas nuevas reciben el rol `member`. Solo los administradores acceden al dashboard y únicamente `kikinttrex0231@gmail.com` puede promover usuarios desde la sección **Promote**.
 
+Las contraseñas nuevas deben tener entre 8 y 128 caracteres e incluir al menos una mayúscula, dos minúsculas, un número y un signo.
+
 ## Despliegue correcto
 
 Ejecuta siempre desde la raíz del repositorio:
