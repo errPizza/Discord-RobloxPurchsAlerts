@@ -31,3 +31,19 @@ Registra exactamente estas URLs de redirección en cada proveedor:
 - Discord: `https://prchsalerts.kikinttrex0231.workers.dev/api/auth/oauth/discord/callback`
 
 Las cuentas nuevas reciben el rol `member`. Solo los administradores acceden al dashboard y únicamente `kikinttrex0231@gmail.com` puede promover usuarios desde la sección **Promote**.
+
+## Despliegue correcto
+
+Ejecuta siempre desde la raíz del repositorio:
+
+```bash
+npm run deploy
+```
+
+En **Cloudflare → prchsalerts → Settings → Builds**, usa:
+
+- Root directory: `/`
+- Build command: `npm run build`
+- Deploy command: `npx wrangler deploy --config worker/wrangler.toml --keep-vars`
+
+No configures `frontend` como root ni despliegues esa carpeta directamente: eso publica el HTML fuente sin Vite, elimina la API de la versión activa y deja la página en blanco.

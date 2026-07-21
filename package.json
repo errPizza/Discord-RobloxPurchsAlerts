@@ -1,0 +1,10 @@
+{
+  "name": "prchsalerts",
+  "private": true,
+  "scripts": {
+    "build": "npm ci --prefix frontend && npm run build --prefix frontend",
+    "test": "node --test worker/tests/worker.test.mjs && npm run lint --prefix frontend",
+    "deploy": "npm run build && npx --yes wrangler@latest deploy --config worker/wrangler.toml --keep-vars"
+  }
+}
+
