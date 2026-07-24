@@ -92,7 +92,7 @@ flowchart TD
 
 - El registro manual guarda un hash PBKDF2-SHA256 en D1 y crea la cuenta con rol `member`.
 - Google y Discord entregan un correo verificado; el Worker enlaza la identidad OAuth con un usuario de D1.
-- La sesión utiliza un token aleatorio opaco en una cookie `HttpOnly`, `Secure` y `SameSite=Lax`. En D1 solo se guarda su hash SHA-256, enlazado al navegador y con expiración de siete días, por lo que puede revocarse al cerrar sesión.
+- La sesión se guarda en una cookie `HttpOnly`, `Secure` y `SameSite=Lax`, firmada con HMAC-SHA256.
 - Los miembros pueden ver la página pública.
 - Los administradores pueden entrar al dashboard.
 - Solo el correo configurado en `OWNER_EMAIL` puede utilizar **Promote**.
@@ -225,10 +225,6 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
-TURNSTILE_SITE_KEY=
-TURNSTILE_SECRET=
-PUBLIC_ORIGIN=
-REQUIRE_SIGNED_WEBHOOKS=false
 ```
 
 Nunca subas `.dev.vars`, contraseñas, client secrets ni URLs completas de webhooks al repositorio.
@@ -273,9 +269,6 @@ npx wrangler dev
 | `ASSETS` | Static Assets | Sirve `frontend/dist` y el fallback SPA. |
 | `DB` | D1 | Usuarios, OAuth, contactos, configuración y estadísticas. |
 | `WEEKLY_STATS` | KV | Copia compatible del historial semanal antiguo. |
-| `AUTH_RATE_LIMITER` | Rate Limit | Limita login, signup e inicio de OAuth a 20 peticiones por minuto y origen. |
-| `ADMIN_RATE_LIMITER` | Rate Limit | Limita el uso autenticado del dashboard a 300 peticiones por minuto. |
-| `WEBHOOK_RATE_LIMITER` | Rate Limit | Protege los receptores de Roblox con un máximo de 1200 peticiones por minuto. |
 
 El nombre del Worker es `prchsalerts`. El cron configurado es `0 6 * * 1`, es decir, lunes a las 06:00 UTC.
 
@@ -283,9 +276,8 @@ El nombre del Worker es `prchsalerts`. El cron configurado es `0 6 * * 1`, es de
 
 | Nombre | Obligatorio para | Descripción |
 | --- | --- | --- |
-| `SESSION_SECRET` | OAuth | Firma el intento y el `state` de OAuth. Debe ser largo, aleatorio y distinto del pepper. |
+| `SESSION_SECRET` | Sesiones y OAuth | Firma cookies y estados OAuth. Debe ser largo y aleatorio. |
 | `PASSWORD_PEPPER` | Acceso por correo | Se añade a la contraseña antes de derivar su hash. |
-| `PUBLIC_ORIGIN` | OAuth recomendado | Origen HTTPS canónico usado para generar callbacks exactos. |
 | `DONATION_SECRET` | Roblox → `/` | Autoriza mensajes de donaciones. |
 | `ITEMS_SECRET` | Roblox → `/item`, `/bulk` | Autoriza mensajes de compras. |
 | `STATS_SECRET` | Roblox → `/stats` | Autoriza actualizaciones estadísticas. |
@@ -297,9 +289,6 @@ El nombre del Worker es `prchsalerts`. El cron configurado es `0 6 * * 1`, es de
 | `GOOGLE_CLIENT_SECRET` | Google OAuth | Secreto de la aplicación. |
 | `DISCORD_CLIENT_ID` | Discord OAuth | Identificador público de la aplicación. |
 | `DISCORD_CLIENT_SECRET` | Discord OAuth | Secreto de la aplicación. |
-| `TURNSTILE_SITE_KEY` | Antibot opcional | Site key pública del widget de Cloudflare Turnstile. Solo se expone si también existe el secreto. |
-| `TURNSTILE_SECRET` | Antibot opcional | Valida en el servidor los tokens de login y signup. |
-| `REQUIRE_SIGNED_WEBHOOKS` | Roblox reforzado | Si vale `true`, exige timestamp, nonce y firma HMAC en los webhooks. Actívalo después de adaptar el script de Roblox. |
 | `ACCOUNT_CONFIG` | Compatibilidad opcional | Lista JSON de cuentas antiguas; D1 es el sistema principal. |
 
 Para crear o reemplazar un secreto en producción:
@@ -318,19 +307,6 @@ Las URLs de redirección de producción son:
 - Discord: `https://prchsalerts.kikinttrex0231.workers.dev/api/auth/oauth/discord/callback`
 
 Los botones solo se habilitan cuando están presentes tanto el Client ID como el Client Secret del proveedor.
-
-Cada proveedor conserva su propio intento OAuth para que dos pestañas o dos proveedores no se sobrescriban. El callback exige un `state` firmado y no expirado, utiliza exactamente la misma URL de redirección y solo acepta perfiles con correo verificado. Google autentica el intercambio mediante el cuerpo URL-encoded; Discord utiliza HTTP Basic. Tanto login como signup social pasan por el mismo flujo: si el correo no existe se crea un miembro y, si existe, se enlaza el proveedor antes de crear la sesión revocable.
-
-### Protecciones de seguridad
-
-- Los cuerpos JSON tienen tipo, tamaño y estructura limitados; números, textos, arrays, rutas, semanas y UserIds se validan de nuevo en el Worker.
-- Login se bloquea durante 15 minutos después de cinco contraseñas incorrectas y ejecuta una derivación falsa para dificultar la enumeración de usuarios.
-- Las mutaciones con cookie rechazan orígenes externos; los endpoints sensibles también usan limitadores nativos de Cloudflare.
-- Las respuestas incluyen CSP, HSTS, protección contra iframes, `nosniff`, política de permisos, aislamiento de origen y `Cache-Control: no-store` para la API.
-- Las llamadas salientes a Roblox, Discord, OAuth y Turnstile tienen timeout. Los webhooks de Discord deben ser HTTPS y pertenecer a un dominio válido de Discord.
-- Turnstile es opcional hasta configurar sus dos claves. Cuando está activo, login y signup exigen una validación de servidor asociada al hostname y a la acción correcta.
-- Roblox puede enviar `eventId` para evitar duplicados. El modo reforzado exige `X-AGM-Timestamp`, `X-AGM-Nonce` y `X-AGM-Signature`; la firma es Base64 URL-safe de `HMAC-SHA256(secret, timestamp + "." + nonce + "." + cuerpo_json_exacto)` y caduca en cinco minutos.
-- Para activar las firmas, adapta primero Roblox, despliega el cambio y después define `REQUIRE_SIGNED_WEBHOOKS=true`. Activarlo antes bloquearía las peticiones antiguas.
 
 ### Configuración del build en Cloudflare
 
@@ -435,18 +411,13 @@ La siguiente referencia cubre todas las funciones con nombre, métodos de entrad
 
 | Función | Qué hace |
 | --- | --- |
-| `fetch(request, env)` | Entrada de cada petición HTTP. Separa autenticación, administración, API pública, archivos React y webhooks; asigna un Request ID, aplica cabeceras de seguridad y convierte errores no controlados en un `500` JSON sanitizado. |
+| `fetch(request, env)` | Entrada de cada petición HTTP. Separa autenticación, administración, API pública, archivos React y webhooks. Convierte errores no controlados en un `500` JSON. |
 | `scheduled(event, env)` | Entrada del cron. Si los mensajes están habilitados, busca la semana anterior, construye el resumen y lo envía a `STATS_WEBHOOK`. |
 
 ### `worker/routes/public.js`
 
 | Función | Qué hace |
 | --- | --- |
-| `integer(value, label, maximum)` | Convierte y restringe cantidades a enteros seguros, no negativos y con máximo explícito. |
-| `validateUserId(value)` | Permite un UserId ausente o exige de 1 a 20 dígitos y valor mayor que cero. |
-| `validateText(value, label, maximum, required)` | Normaliza un texto y comprueba presencia y longitud. |
-| `validateMessagePayload(data, type)` | Valida el contrato completo de Donation, Single o Bulk antes de consultar Roblox o Discord. |
-| `validateStatsPayload(data)` | Valida métricas, tipos, items y creatorIds antes de modificar D1. |
 | `handlePublicWebhook(request, env, pathname)` | Valida método, ruta y secret. Procesa `/stats` sin depender del estado de Discord. Para mensajes revisa el interruptor y la blocklist, obtiene imágenes de Roblox, crea el embed correcto y lo envía. |
 
 ### `worker/routes/admin.js`
@@ -460,21 +431,20 @@ La siguiente referencia cubre todas las funciones con nombre, métodos de entrad
 | Función | Qué hace |
 | --- | --- |
 | `readCookie(request, name)` | Extrae una cookie concreta del encabezado HTTP. |
-| `sessionCookieName(request)` | Usa `__Host-agm_session` en HTTPS y el nombre local compatible durante desarrollo. |
-| `sessionCookie(request, value, maxAge, name)` | Construye la cookie segura de sesión o su variante de borrado. |
+| `sessionCookie(value, maxAge)` | Construye la cookie segura `agm_session`. |
 | `accounts(env)` | Lee cuentas antiguas desde `ACCOUNT_CONFIG`; devuelve una lista vacía si no existe o no es JSON válido. |
 | `normalizedEmail(value)` | Limpia, convierte a minúsculas y valida un correo de hasta 254 caracteres. |
 | `publicUser(user)` | Elimina datos sensibles y añade `isAdmin` e `isOwner` para el frontend. |
-| `userAgentHash(request)` | Calcula SHA-256 del User-Agent para enlazar la sesión al navegador que la creó. |
-| `sessionHeaders(request, user, env)` | Genera un token aleatorio, guarda solo su hash en D1 y prepara las cookies de una sesión revocable. |
-| `getSession(request, env)` | Hashea la cookie y el User-Agent, comprueba expiración en D1 y devuelve siempre el rol actual. |
+| `sessionToken(user, secret)` | Serializa id, correo, rol y expiración; después firma la carga con HMAC. |
+| `sessionHeaders(user, env)` | Crea el encabezado `Set-Cookie` de una sesión nueva. |
+| `getSession(request, env)` | Valida firma y expiración de la cookie; si tiene id, vuelve a consultar D1 para obtener el rol actual. |
 | `requireAdmin(request, env)` | Devuelve la sesión únicamente si pertenece a un administrador. |
 | `requireOwner(request, env)` | Devuelve la sesión únicamente si el correo coincide con `OWNER_EMAIL`. |
-| `oauthErrorRedirect(request, provider, error)` | Regresa al login con un código estable y borra solo el intento del proveedor afectado. |
+| `oauthErrorRedirect(request, error)` | Regresa al login con un código de error legible y borra el intento OAuth. |
 | `oauthCallback(request, env, provider)` | Completa OAuth, crea la sesión y redirige al dashboard o al inicio según el rol. |
-| `signup(request, env)` | Limita el cuerpo, valida Turnstile si está configurado, correo, confirmación y contraseña; crea un miembro e inicia su sesión. |
-| `login(request, env)` | Aplica Turnstile y bloqueo por intentos, migra cuentas antiguas, verifica el hash sin revelar si el correo existe y crea una sesión. |
-| `handleAuth(request, env, pathname)` | Distribuye `/api/auth/*`, comprueba mismo origen, rate limit, revocación de logout e inicio/callback de Google y Discord. |
+| `signup(request, env)` | Valida correo, confirmación y contraseña, crea un miembro en D1 e inicia su sesión. |
+| `login(request, env)` | Busca la cuenta, verifica el hash y entrega una sesión segura. |
+| `handleAuth(request, env, pathname)` | Distribuye todas las rutas `/api/auth/*`, incluidos inicio y callback de Google y Discord. |
 
 ### `worker/database/database.js`
 
@@ -483,18 +453,10 @@ La siguiente referencia cubre todas las funciones con nombre, métodos de entrad
 | `getUserByEmail(env, email)` | Busca un usuario por correo sin distinguir mayúsculas. |
 | `getUserById(env, id)` | Busca un usuario por su id interno. |
 | `createEmailUser(env, email, passwordHash)` | Inserta un miembro de correo y usa la parte anterior a `@` como nombre inicial. |
-| `ensureLegacyUser(env, account)` | Importa a D1 una cuenta válida de `ACCOUNT_CONFIG` sin duplicarla. |
 | `getUserByOAuth(env, provider, providerUserId)` | Busca un usuario mediante su identidad externa. |
 | `getOrCreateOAuthUser(env, data)` | Reutiliza una identidad OAuth o crea el usuario y su enlace con el proveedor. |
 | `listUsers(env, query)` | Busca hasta 100 usuarios y reúne sus proveedores de acceso. |
 | `promoteUser(env, userId)` | Cambia el rol del usuario a `admin`. |
-| `createAuthSession(env, data)` | Elimina sesiones expiradas y guarda token hasheado, usuario, navegador y vencimiento. |
-| `getAuthSession(env, tokenHash, userAgentHash)` | Valida la sesión contra D1 y recupera el usuario y rol actuales. |
-| `deleteAuthSession(env, tokenHash)` | Revoca una sesión concreta al cerrar sesión. |
-| `isLoginLocked(env, identifierHash)` | Comprueba si el correo hasheado continúa bloqueado. |
-| `recordLoginFailure(env, identifierHash)` | Suma fallos en una ventana de 15 minutos y bloquea al quinto intento. |
-| `clearLoginFailures(env, identifierHash)` | Reinicia el contador después de un acceso correcto. |
-| `claimWebhookEvent(env, scope, eventId)` | Reclama un nonce/eventId una sola vez y limpia deduplicaciones con más de 24 horas. |
 | `getWeeklyStats(env, weekKey)` | Lee una fila de `weekly_stats`. |
 | `incrementWeeklyStats(env, weekKey, changes)` | Crea la semana o suma cambios mediante un UPSERT. |
 | `replaceWeeklyStats(env, weekKey, values)` | Crea o reemplaza todos los valores exactos de una semana. |
@@ -575,16 +537,15 @@ La siguiente referencia cubre todas las funciones con nombre, métodos de entrad
 | `PROVIDERS` | Define endpoints, scopes y forma de interpretar perfiles de Google y Discord. |
 | `OAuthError` | Error con código estable que el login puede traducir. |
 | `readCookie(request, name)` | Lee la cookie del intento OAuth. |
-| `oauthCookieName(request, provider)` | Crea un nombre independiente y con prefijo `__Host-` para cada proveedor. |
-| `oauthCookie(request, provider, value, maxAge)` | Construye o elimina la cookie temporal y segura del intento OAuth. |
+| `oauthCookie(value, maxAge)` | Construye una cookie temporal y segura para OAuth. |
 | `providerConfig(env, provider)` | Une la definición del proveedor con sus secretos. |
 | `oauthProviders(env)` | Indica qué proveedores tienen ambas credenciales. |
-| `callbackUrl(request, env, provider)` | Construye el callback desde `PUBLIC_ORIGIN` seguro o desde el origen de la petición. |
+| `callbackUrl(request, provider)` | Construye la URL absoluta del callback. |
 | `signedAttempt(data, secret)` | Firma proveedor, state y expiración. |
 | `parseAttempt(value, secret)` | Valida y decodifica el intento firmado. |
 | `beginOAuth(request, env, provider)` | Genera state, guarda la cookie y redirige al proveedor. |
 | `responseJson(response, code)` | Lee JSON externo y genera `OAuthError` si la respuesta falló. |
-| `finishOAuth(request, env, provider)` | Valida state, expiración y redirect exacto; autentica el intercambio como exige cada proveedor, obtiene un correo verificado y crea o enlaza al usuario. |
+| `finishOAuth(request, env, provider)` | Valida state, intercambia el code, obtiene el perfil verificado y crea o recupera al usuario. |
 
 ### `worker/services/password.js`
 
@@ -594,29 +555,6 @@ La siguiente referencia cubre todas las funciones con nombre, métodos de entrad
 | `passwordRequirements(password, email)` | Exige 8–128 caracteres, una mayúscula, dos minúsculas, un número, un signo y evita claves comunes o que contengan el correo. |
 | `hashPassword(password, pepper)` | Genera salt aleatoria y guarda esquema, iteraciones, salt y hash. |
 | `verifyPassword(password, storedHash, pepper)` | Verifica hashes PBKDF2 actuales, HMAC antiguos y SHA-256 legado; rechaza cuentas OAuth-only. |
-| `dummyPasswordCheck(password, pepper)` | Ejecuta PBKDF2 aun cuando la cuenta no existe o está bloqueada para reducir diferencias de tiempo observables. |
-
-### `worker/services/security.js`
-
-| Función o clase | Qué hace |
-| --- | --- |
-| `RequestValidationError` | Error controlado que conserva el estado HTTP de una validación. |
-| `readJsonBody(request, maximumBytes)` | Exige JSON, limita tamaño real y declarado y acepta solo objetos. |
-| `validationError(error, fallback)` | Convierte validaciones en respuestas JSON seguras. |
-| `isSameOriginMutation(request)` | Rechaza mutaciones con `Origin` o `Sec-Fetch-Site` externos. |
-| `consumeRateLimit(binding, request, scope, subject)` | Construye una key SHA-256 y consume un limitador nativo de Cloudflare. |
-| `rateLimited()` | Devuelve `429` y `Retry-After`. |
-| `validSecret(request, bodySecret, expectedSecret)` | Acepta Bearer o secreto legado del cuerpo y los compara en tiempo constante. |
-| `verifyWebhookSignature(request, rawBody, secret, requireSignature)` | Valida timestamp, nonce y HMAC del cuerpo exacto con una antigüedad máxima de cinco minutos. |
-| `signedWebhooksRequired(env)` | Interpreta la variable que hace obligatorias las firmas. |
-| `applySecurityHeaders(response, request, requestId)` | Añade CSP, HSTS, anti-frame, no-cache de API y demás cabeceras defensivas. |
-
-### `worker/services/turnstile.js`
-
-| Función | Qué hace |
-| --- | --- |
-| `turnstileSiteKey(env)` | Expone la site key solo cuando site key y secreto están configurados. |
-| `verifyTurnstile(request, env, token, expectedAction)` | Envía el token a Siteverify con timeout, IP e idempotencia y valida éxito, hostname y acción. |
 
 ### `worker/utils/crypto.js`
 
@@ -653,9 +591,9 @@ La referencia incluye cada componente y función con nombre. Los controladores a
 | `useAuth()` | Obtiene el contexto y evita usarlo fuera del provider. |
 | `api(path, options)` | Cliente `fetch`: incluye cookies, envía JSON, interpreta JSON y lanza errores con el mensaje del Worker. |
 | `getSession()` | Llama a `/api/auth/session`. |
-| `getProviders()` | Llama a `/api/auth/providers` y obtiene OAuth y la site key opcional de Turnstile. |
-| `login(email, password, turnstileToken)` | Envía credenciales y prueba antibot al login. |
-| `signup(email, password, passwordConfirmation, turnstileToken)` | Envía registro, confirmación y prueba antibot. |
+| `getProviders()` | Llama a `/api/auth/providers`. |
+| `login(email, password)` | Envía las credenciales al login. |
+| `signup(email, password, passwordConfirmation)` | Envía el formulario de registro. |
 | `logout()` | Cierra la sesión del servidor. |
 
 ### Utilidades y layouts
@@ -663,8 +601,6 @@ La referencia incluye cada componente y función con nombre. Los controladores a
 | Función | Qué hace |
 | --- | --- |
 | `prefersReducedMotion()` | Detecta si el navegador pide reducir animaciones. |
-| `sectionScrollTop(element, hash)` | Calcula la posición centrada y limitada a la que debe navegar cada anchor considerando el header y el final de la página. |
-| `closestSectionHash(sections, currentTop)` | Elige de forma determinista el anchor cuya posición objetivo está más cerca del scroll actual, incluso cuando hay anchors anidados. |
 | `scrollToSection(hash, updateHistory)` | Busca una sección, descuenta el header, la centra cuando es posible y realiza scroll suave accesible. |
 | `LandingLayout({ children })` | Añade header, main y footer; también procesa hashes al cambiar de ruta. |
 | `DashboardLayout()` | Protege el dashboard, restringe miembros, muestra el menú, oculta Promote a quien no sea owner y renderiza la subruta con `Outlet`. |
@@ -680,10 +616,10 @@ La referencia incluye cada componente y función con nombre. Los controladores a
 | `navigate(event, hash)` | Control interno de `Hero` que utiliza el scroll centrado. |
 | `StatsBar()` | Renderiza visitas, favoritos, experiencias y años creando. |
 | `About({ description })` | Renderiza la sección Sobre nosotros. |
-| `Games()` | Renderiza el catálogo horizontal de experiencias, la portada y fondo compartido de Lacywings Outfits, su equipo con avatares y los tres principios del estudio. |
+| `Games()` | Renderiza los tres principios de diseño del estudio. |
 | `RobloxIcon()` | SVG blanco utilizado en los enlaces de perfiles y comunidad. |
 | `DiscordIcon()` | SVG blanco utilizado en el enlace de Discord. |
-| `ContactGrid({ contacts })` | Renderiza Administrador, Game Design y Community; separa roles, muestra los avatares de Roblox o el logo circular y utiliza datos de D1 o fallback. |
+| `ContactGrid({ contacts })` | Renderiza Administrador, Game Design y Community; separa roles, recorta el logo circular y utiliza datos de D1 o fallback. |
 
 ### Componentes del dashboard
 
@@ -711,8 +647,6 @@ La referencia incluye cada componente y función con nombre. Los controladores a
 | --- | --- |
 | `Home()` | Carga settings/contactos, activa animaciones por intersección y compone Hero, About, Games y ContactGrid. |
 | `ProviderButtons({ providers })` | Renderiza botones Google y Discord activos o deshabilitados. |
-| `loadTurnstile()` | Carga una sola vez el script oficial de Turnstile en modo explícito. |
-| `TurnstileWidget({ siteKey, action, onToken })` | Monta, reinicia y destruye el reto antibot de login o signup. |
 | `Login()` | Gestiona proveedores, formulario, errores OAuth, transición de entrada/salida y redirección según rol. |
 | `submit(event)` de Login | Envía el acceso por correo y espera la animación antes de navegar. |
 | `Signup()` | Gestiona OAuth, correo, contraseña, confirmación y lista visual de requisitos. |
@@ -750,9 +684,6 @@ La referencia incluye cada componente y función con nombre. Los controladores a
 | `weekly_stats` | Totales agrupados por Key semanal. |
 | `daily_stats` | Totales diarios para gráficas semanal y mensual. |
 | `discord_message_blocklist` | UserIds cuyas operaciones no generan mensajes. |
-| `auth_sessions` | Hashes de sesiones revocables, usuario, navegador y expiración. |
-| `auth_failures` | Intentos fallidos y bloqueos temporales por identificador hasheado. |
-| `webhook_events` | Nonces o eventIds ya procesados para impedir replays y duplicados. |
 
 ### Historial de migraciones
 
@@ -767,9 +698,8 @@ La referencia incluye cada componente y función con nombre. Los controladores a
 | `007_user_auth_providers.sql` | Crea OAuth y asegura el rol del propietario. |
 | `008_discord_message_blocklist.sql` | Crea la lista de exclusión por UserId. |
 | `009_team_profiles.sql` | Añade descripciones, enlaces e imagen a contactos. |
-| `010_security_hardening.sql` | Crea sesiones revocables, bloqueo de login y deduplicación de webhooks. |
 
-No edites una migración que ya fue aplicada en producción. Para un cambio nuevo crea, por ejemplo, `011_descripcion_del_cambio.sql` y después ejecuta:
+No edites una migración que ya fue aplicada en producción. Para un cambio nuevo crea, por ejemplo, `010_descripcion_del_cambio.sql` y después ejecuta:
 
 ```bash
 npx wrangler d1 migrations apply another-game-more --local
@@ -813,16 +743,12 @@ Edita el arreglo `stats` dentro de `StatsBar()` en `frontend/src/components/land
 
 - Estructura de Sobre nosotros: `frontend/src/components/landing/About.jsx`.
 - Texto configurable de Sobre nosotros: `site_settings.about_description`.
-- Catálogo, descripción, integrantes y principios de Juegos: `frontend/src/components/landing/Games.jsx`.
-- Portada de Lacywings Outfits: `frontend/src/assets/images/lacywings-outfits-cover.webp`.
-- Fondo reutilizable para las tarjetas de juegos: `frontend/src/assets/images/games-shared-background.webp`.
-- Los avatares locales están en `frontend/src/assets/images/avatar-*.webp`; conserva el UserId y el enlace del perfil correspondientes cuando reemplaces uno.
+- Principios de Juegos: arreglo `principles` en `frontend/src/components/landing/Games.jsx`.
 
 ### Cambiar el logotipo o fondo
 
 - Logo: `frontend/src/assets/images/another-game-more-logo.png`.
 - Fondo del hero: `frontend/public/images/hero-yin-yang.jpg`.
-- Fondo de Sobre nosotros: `frontend/src/assets/images/about-background.webp`.
 - Referencias y medidas: `frontend/src/index.css`.
 
 Después de sustituir una imagen ejecuta el build; Vite generará un nombre con hash automáticamente.
@@ -907,12 +833,11 @@ Modifica `OWNER_EMAIL` en `worker/config.js` y crea una migración que dé rol a
 
 | Helper | Función |
 | --- | --- |
-| `FakeD1.constructor()` | Prepara mapas en memoria para semanas, días, usuarios, OAuth, sesiones, bloqueos, deduplicación, blocklist y settings. |
+| `FakeD1.constructor()` | Prepara mapas en memoria para semanas, días, blocklist, settings y usuario. |
 | `FakeD1.prepare(sql)` | Simula `prepare`, `bind`, `first`, `all` y `run` de D1 para las consultas utilizadas. |
 | `passwordHash(password, pepper)` | Genera un hash SHA-256 heredado para pruebas. |
 | `d1PasswordHash(password, pepper)` | Genera un hash HMAC heredado para verificar compatibilidad. |
 | `adminSession(DB)` | Inicia sesión de prueba y devuelve entorno y cookie de administrador. |
-| `oauthRoundTrip(provider, options)` | Simula autorización, token, perfil, callback y cookie final de Google o Discord. |
 
 La suite comprueba:
 
@@ -926,14 +851,6 @@ La suite comprueba:
 - Política y confirmación de contraseña.
 - Permisos exclusivos del propietario.
 - Inicio seguro de OAuth.
-- Registro OAuth de un miembro nuevo con Google.
-- Login y enlace de un administrador existente con Discord mediante HTTP Basic.
-- Sesiones opacas almacenadas y revocadas en D1.
-- Rechazo CSRF de mutaciones administrativas.
-- Rate limiting, cuerpos JSON estrictos y bloqueo tras cinco contraseñas incorrectas.
-- Firmas HMAC, caducidad y prevención de replay de webhooks.
-- CSP, anti-frame, `nosniff` y no-cache de API.
-- Posiciones estables del navbar para Inicio/Logros y Equipo/Contacto aunque sus anchors estén anidados.
 - Errores HTTP en JSON.
 - Analytics semanal, mensual y global.
 - Reemplazo exacto de una semana.
@@ -1012,14 +929,6 @@ La versión se desplegó sin `worker/index.js`. Restaura `main = "worker/index.j
 ### Google o Discord aparecen deshabilitados
 
 Falta el Client ID, el Client Secret o ambos. Añade los dos secretos del proveedor y comprueba que su callback coincida exactamente con la URL configurada.
-
-### OAuth concede permiso, pero vuelve sin iniciar sesión
-
-- Comprueba que `PUBLIC_ORIGIN` coincida con el origen público y que el callback registrado sea idéntico, incluido `https`.
-- Revisa que `SESSION_SECRET` exista y que la migración `010_security_hardening.sql` esté aplicada.
-- Borra intentos antiguos o empieza de nuevo desde `/login`; las cookies OAuth expiran en diez minutos y ahora son independientes por proveedor.
-- En Discord, no cambies la autenticación HTTP Basic del token; en Google, conserva las credenciales dentro del formulario URL-encoded.
-- Después de migrar desde las sesiones antiguas hay que iniciar sesión una vez: los tokens anteriores no están registrados en `auth_sessions`.
 
 ### Las estadísticas no aparecen
 
