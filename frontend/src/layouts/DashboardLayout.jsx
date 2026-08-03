@@ -36,9 +36,10 @@ export default function DashboardLayout() {
         <nav aria-label="Navegación administrativa">
           <NavLink to="/dashboard" end><span>01</span>Resumen</NavLink>
           <NavLink to="/dashboard/stats"><span>02</span>Stats</NavLink>
-          <NavLink to="/dashboard/worker"><span>03</span>Control Worker</NavLink>
-          <NavLink to="/dashboard/database"><span>04</span>DataBase</NavLink>
-          {user.isOwner && <NavLink to="/dashboard/promote"><span>05</span>Promote</NavLink>}
+          <NavLink to="/dashboard/games"><span>03</span>Games</NavLink>
+          <NavLink to="/dashboard/worker"><span>04</span>Control Worker</NavLink>
+          <NavLink to="/dashboard/database"><span>05</span>DataBase</NavLink>
+          {user.isOwner && <NavLink to="/dashboard/promote"><span>06</span>Promote</NavLink>}
         </nav>
         <button className="dashboard-logout" type="button" onClick={logout}>Cerrar sesión <b>↗</b></button>
       </div>

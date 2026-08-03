@@ -1,11 +1,27 @@
 import { bulkMessage, donationMessage, sendDiscord, singleMessage } from "../services/discord.js";
 import { getAvatarUrl, getGroupIconUrl, getItemThumbnailUrl } from "../services/roblox.js";
-import { readCurrentStats, updateWeeklyStats } from "../services/stats.js";
-import { claimWebhookEvent, getWorkerEnabled, isDiscordUserBlocked } from "../database/database.js";
+import { changesForStatsPayload, readCurrentStats, updateWeeklyStats } from "../services/stats.js";
+import { claimWebhookEvent, getWorkerEnabled, isDiscordUserBlocked, recordGameStatEvent } from "../database/database.js";
 import { consumeRateLimit, rateLimited, readJsonBody, signedWebhooksRequired, validSecret, validationError, verifyWebhookSignature } from "../services/security.js";
 import { json, methodNotAllowed, unauthorized } from "../utils/response.js";
 
 const MAX_ROBUX = 1_000_000_000;
+const CLOTHING_ROUTES = new Map([
+  ["/games/Clothing/donation", { type: "donation", scope: "/games/Clothing/donation" }],
+  ["/games/Clothing/item", { type: "item", scope: "/games/Clothing/item" }],
+  ["/games/Clothing/bulk", { type: "bulk", scope: "/games/Clothing/bulk" }],
+  ["/games/Clothing/stats", { type: "stats", scope: "/games/Clothing/stats" }],
+  ["/", { type: "donation", scope: "/games/Clothing/donation", legacy: true }],
+  ["/item", { type: "item", scope: "/games/Clothing/item", legacy: true }],
+  ["/bulk", { type: "bulk", scope: "/games/Clothing/bulk", legacy: true }],
+  ["/stats", { type: "stats", scope: "/games/Clothing/stats", legacy: true }],
+]);
+const MISSILE_ROUTES = new Map([
+  ["/games/Missile/DevProduct/Normal", { eventType: "missile_devproduct_normal", metric: "devProductNormal" }],
+  ["/games/Missile/DevProduct/Gift", { eventType: "missile_devproduct_gift", metric: "devProductGift" }],
+  ["/games/Missile/Gamepass/Normal", { eventType: "missile_gamepass_normal", metric: "gamepassNormal" }],
+  ["/games/Missile/Gamepass/Gift", { eventType: "missile_gamepass_gift", metric: "gamepassGift" }],
+]);
 
 function integer(value, label, maximum = MAX_ROBUX) {
 
@@ -94,14 +110,83 @@ function validateStatsPayload(data) {
   }
 }
 
-export async function handlePublicWebhook(request, env, pathname) {
+function getEventId(data, signature) {
 
-  const isDonation = pathname === "/";
-  const isSingle = pathname === "/item";
-  const isBulk = pathname === "/bulk";
-  const isStats = pathname === "/stats";
+  const eventId = String(data.eventId || "").trim();
 
-  if (!isDonation && !isSingle && !isBulk && !isStats) return new Response("Invalid Route", { status: 404 });
+  if (eventId && !/^[A-Za-z0-9:_-]{8,128}$/.test(eventId)) throw new Error("eventId no es válido.");
+
+  return signature.nonce || eventId || null;
+}
+
+function missileAmount(data) {
+
+  const amount = data.amount ?? data.price ?? data.robux ?? data.value ?? data.productPrice ?? data.product?.price ?? 0;
+
+  return integer(amount, "amount");
+}
+
+async function handleMissileEvent(request, env, pathname, route) {
+
+  if (request.method !== "POST") return methodNotAllowed();
+
+  let body;
+
+  try { body = await readJsonBody(request, 32 * 1024); } catch (error) { return validationError(error); }
+
+  const { data, raw } = body;
+  const secret = env.BOMBGAME_SECRET;
+
+  if (!validSecret(request, data.secret, secret)) return unauthorized();
+
+  const signature = await verifyWebhookSignature(request, raw, secret, signedWebhooksRequired(env));
+
+  if (!signature.valid) return json({ success: false, error: "Firma de petición inválida o expirada." }, { status: 401 });
+  if (!(await consumeRateLimit(env.WEBHOOK_RATE_LIMITER, request, pathname))) return rateLimited();
+
+  let sourceEventId;
+  let amount;
+  let revenue;
+
+  try {
+    validateUserId(data.userId);
+    sourceEventId = getEventId(data, signature);
+    amount = missileAmount(data);
+    revenue = integer(data.revenue ?? data.received ?? data.net ?? amount, "revenue");
+  } catch (error) {
+    return json({ success: false, error: error.message }, { status: 400 });
+  }
+
+  if (sourceEventId && !(await claimWebhookEvent(env, pathname, sourceEventId))) {
+    return json({ success: true, duplicate: true, recorded: false, messageSent: false });
+  }
+
+  const inserted = await recordGameStatEvent(env, {
+    gameKey: "Missile",
+    eventType: route.eventType,
+    spent: amount,
+    revenue,
+    [route.metric]: 1,
+    userId: data.userId ? String(data.userId) : null,
+    sourceEventId,
+  });
+
+  return json({
+    success: true,
+    game: "Missile",
+    eventType: route.eventType,
+    recorded: inserted,
+    messageSent: false,
+  });
+}
+
+async function handleClothingEvent(request, env, pathname, route) {
+
+  const isDonation = route.type === "donation";
+  const isSingle = route.type === "item";
+  const isBulk = route.type === "bulk";
+  const isStats = route.type === "stats";
+
   if (request.method !== "POST") return methodNotAllowed();
 
   let body;
@@ -119,20 +204,27 @@ export async function handlePublicWebhook(request, env, pathname) {
   if (!signature.valid) return json({ success: false, error: "Firma de petición inválida o expirada." }, { status: 401 });
   if (!(await consumeRateLimit(env.WEBHOOK_RATE_LIMITER, request, pathname))) return rateLimited();
 
-  const eventId = String(data.eventId || "").trim();
+  let deduplicationId;
 
-  if (eventId && !/^[A-Za-z0-9:_-]{8,128}$/.test(eventId)) return json({ success: false, error: "eventId no es válido." }, { status: 400 });
-
-  const deduplicationId = signature.nonce || eventId;
+  try { deduplicationId = getEventId(data, signature); }
+  catch (error) { return json({ success: false, error: error.message }, { status: 400 }); }
 
   if (isStats) {
     try { validateStatsPayload(data); } catch (error) { return json({ success: false, error: error.message }, { status: 400 }); }
 
-    if (deduplicationId && !(await claimWebhookEvent(env, pathname, deduplicationId))) return json({ success: true, duplicate: true, messageSent: false });
+    if (deduplicationId && !(await claimWebhookEvent(env, route.scope, deduplicationId))) return json({ success: true, duplicate: true, recorded: false, messageSent: false });
 
+    const changes = changesForStatsPayload(data);
     await updateWeeklyStats(env, data);
+    await recordGameStatEvent(env, {
+      gameKey: "Clothing",
+      eventType: `clothing_${String(data.type).toLowerCase()}`,
+      ...changes,
+      userId: data.userId ? String(data.userId) : null,
+      sourceEventId: deduplicationId,
+    });
 
-    return json({ success: true });
+    return json({ success: true, game: "Clothing", recorded: true, messageSent: false });
   }
 
   try { validateUserId(data.userId); } catch (error) { return json({ success: false, error: error.message }, { status: 400 }); }
@@ -146,7 +238,7 @@ export async function handlePublicWebhook(request, env, pathname) {
   try { validateMessagePayload(data, isDonation ? "Donation" : isSingle ? "Single" : "Bulk"); }
   catch (error) { return json({ success: false, error: error.message }, { status: 400 }); }
 
-  if (deduplicationId && !(await claimWebhookEvent(env, pathname, deduplicationId))) return json({ success: true, duplicate: true, messageSent: false });
+  if (deduplicationId && !(await claimWebhookEvent(env, route.scope, deduplicationId))) return json({ success: true, duplicate: true, messageSent: false });
 
   const stats = (await readCurrentStats(env)) || {};
   const number = isDonation ? (stats.donations || 0) + 1 : isSingle ? (stats.single || 0) + 1 : (stats.bulk || 0) + 1;
@@ -163,5 +255,17 @@ export async function handlePublicWebhook(request, env, pathname) {
   else await sendDiscord(env.BULK_ITEMS_WEBHOOK, bulkMessage(data, avatar, number, brandImage));
 
   return json({ success: true, workerEnabled: true, messageSent: true });
-  
+}
+
+export async function handlePublicWebhook(request, env, pathname) {
+
+  const clothingRoute = CLOTHING_ROUTES.get(pathname);
+
+  if (clothingRoute) return handleClothingEvent(request, env, pathname, clothingRoute);
+
+  const missileRoute = MISSILE_ROUTES.get(pathname);
+
+  if (missileRoute) return handleMissileEvent(request, env, pathname, missileRoute);
+
+  return new Response("Invalid Route", { status: 404 });
 }

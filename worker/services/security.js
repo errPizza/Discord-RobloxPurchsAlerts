@@ -134,7 +134,7 @@ export function applySecurityHeaders(response, request, requestId = crypto.rando
     headers.set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*.rbxcdn.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; manifest-src 'self'; upgrade-insecure-requests");
   }
 
-  if (pathname.startsWith("/api/") || ["/", "/item", "/bulk", "/stats"].includes(pathname) && request.method !== "GET") {
+  if (pathname.startsWith("/api/") || pathname.startsWith("/games/") || ["/", "/item", "/bulk", "/stats"].includes(pathname) && request.method !== "GET") {
     headers.set("Cache-Control", "no-store, max-age=0");
     headers.set("Pragma", "no-cache");
   }

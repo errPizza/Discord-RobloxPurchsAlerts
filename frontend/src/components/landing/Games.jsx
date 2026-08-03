@@ -32,6 +32,38 @@ const contributors = [
   },
 ];
 
+const missileContributors = [
+  {
+    name: "err_Pizza",
+    handle: "@err_Lo2sDat4",
+    roles: ["Game Design", "Software Designer", "UI Designer", "Scripter"],
+    userId: "4093162315",
+    profile: "https://www.roblox.com/es/users/4093162315/profile",
+  },
+  {
+    name: "676767",
+    handle: "@dlsadjadjkd1s3",
+    roles: ["Project Manager", "Builder", "VFX"],
+    userId: "8933542097",
+    profile: "https://www.roblox.com/es/users/8933542097/profile",
+  },
+];
+
+function ContributorList({ people, avatars }) {
+  return <div className="game-contributors">
+    {people.map((contributor) => <a className="game-contributor" href={contributor.profile} target="_blank" rel="noreferrer" key={`${contributor.profile}-${contributor.handle}`}>
+      {avatars[contributor.userId]
+        ? <img src={avatars[contributor.userId]} alt={`Avatar actual de Roblox de ${contributor.name}`} loading="lazy" decoding="async" />
+        : <span className="game-contributor-avatar"><PlatformIcon type="roblox" size={22} /></span>}
+      <span className="game-contributor-info">
+        <strong>{contributor.name} <i>({contributor.handle})</i></strong>
+        <small>{contributor.roles.join(" · ")}</small>
+      </span>
+      <PlatformIcon type="roblox" size={18} className="game-platform-icon" />
+    </a>)}
+  </div>;
+}
+
 export default function Games({ avatars = {} }) {
   return <section className="games-section" id="juegos" data-reveal>
     <div className="games-heading">
@@ -52,18 +84,18 @@ export default function Games({ avatars = {} }) {
           <span>Equipo del proyecto</span>
           <small>Diseño, desarrollo y contenido</small>
         </div>
-        <div className="game-contributors">
-          {contributors.map((contributor) => <a className="game-contributor" href={contributor.profile} target="_blank" rel="noreferrer" key={contributor.profile}>
-            {avatars[contributor.userId]
-              ? <img src={avatars[contributor.userId]} alt={`Avatar actual de Roblox de ${contributor.name}`} loading="lazy" decoding="async" />
-              : <span className="game-contributor-avatar"><PlatformIcon type="roblox" size={22} /></span>}
-            <span className="game-contributor-info">
-              <strong>{contributor.name} <i>({contributor.handle})</i></strong>
-              <small>{contributor.roles.join(" · ")}</small>
-            </span>
-            <PlatformIcon type="roblox" size={18} className="game-platform-icon" />
-          </a>)}
+        <ContributorList people={contributors} avatars={avatars} />
+      </div>
+    </article>
+    <article className="game-showcase game-showcase-minimal" style={{ "--game-background": `url(${gamesBackground})` }}>
+      <div className="game-content">
+        <span className="game-index game-index-inline">Experiencia 02</span>
+        <h3>Missile</h3>
+        <div className="game-team-heading">
+          <span>Equipo del proyecto</span>
+          <small>Diseño y desarrollo</small>
         </div>
+        <ContributorList people={missileContributors} avatars={avatars} />
       </div>
     </article>
     <div className="principles-grid">

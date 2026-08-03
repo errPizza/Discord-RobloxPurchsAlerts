@@ -17,6 +17,7 @@ class FakeD1 {
     this.sessions = new Map();
     this.oauthAccounts = new Map();
     this.webhookEvents = new Set();
+    this.gameStatEvents = [];
     this.authFailures = new Map();
     this.settings = new Map([["worker_enabled", "1"]]);
     this.user = null;
@@ -52,6 +53,7 @@ class FakeD1 {
         if (sql.includes("COUNT(*)") && sql.includes("FROM users")) return { count: 1 };
         if (sql.includes("COUNT(*)") && sql.includes("FROM contacts")) return { count: 2 };
         if (sql.includes("COUNT(*)") && sql.includes("FROM weekly_stats")) return { count: this.weeklyRecord ? 1 : 0 };
+        if (sql.includes("COUNT(*)") && sql.includes("FROM game_stat_events")) return { count: database.gameStatEvents.length };
         if (sql.includes("FROM site_settings WHERE key = 'worker_enabled'")) return { value: database.settings.get("worker_enabled") };
         throw new Error(`Consulta first() no contemplada: ${sql}`);
       },
@@ -110,6 +112,35 @@ class FakeD1 {
             return database.weeklyRecord;
           },
           all: async () => {
+            if (sql.includes("FROM game_stat_events")) {
+              const [bucketSeconds, , gameKey, startTimestamp, endTimestamp] = values;
+              const buckets = new Map();
+
+              for (const event of database.gameStatEvents.filter((entry) => entry.gameKey === gameKey && entry.createdAt >= startTimestamp && entry.createdAt <= endTimestamp)) {
+                const bucket = Math.floor(event.createdAt / bucketSeconds) * bucketSeconds;
+                const current = buckets.get(bucket) || {
+                  bucket,
+                  spent: 0,
+                  revenue: 0,
+                  single: 0,
+                  bulk: 0,
+                  donations: 0,
+                  devProductNormal: 0,
+                  devProductGift: 0,
+                  gamepassNormal: 0,
+                  gamepassGift: 0,
+                };
+
+                for (const key of ["spent", "revenue", "single", "bulk", "donations", "devProductNormal", "devProductGift", "gamepassNormal", "gamepassGift"]) {
+                  current[key] += event[key] || 0;
+                }
+
+                buckets.set(bucket, current);
+              }
+
+              return { results: [...buckets.values()].sort((left, right) => left.bucket - right.bucket) };
+            }
+
             if (sql.includes("FROM oauth_accounts WHERE user_id")) {
               const results = [...database.oauthAccounts.entries()]
                 .filter(([, userId]) => userId === values[0])
@@ -241,6 +272,46 @@ class FakeD1 {
               database.dailyRecords.set(day, record);
 
               return { success: true };
+            }
+
+            if (sql.includes("INSERT OR IGNORE INTO game_stat_events")) {
+              const [
+                gameKey,
+                eventType,
+                spent,
+                revenue,
+                single,
+                bulk,
+                donations,
+                devProductNormal,
+                devProductGift,
+                gamepassNormal,
+                gamepassGift,
+                userId,
+                sourceEventId,
+              ] = values;
+              const exists = sourceEventId && database.gameStatEvents.some((entry) => entry.gameKey === gameKey && entry.eventType === eventType && entry.sourceEventId === sourceEventId);
+
+              if (!exists) {
+                database.gameStatEvents.push({
+                  gameKey,
+                  eventType,
+                  spent,
+                  revenue,
+                  single,
+                  bulk,
+                  donations,
+                  devProductNormal,
+                  devProductGift,
+                  gamepassNormal,
+                  gamepassGift,
+                  userId,
+                  sourceEventId,
+                  createdAt: Math.floor(Date.now() / 1000),
+                });
+              }
+
+              return { success: true, meta: { changes: exists ? 0 : 1 } };
             }
 
             if (!sql.includes("INSERT INTO weekly_stats")) throw new Error(`Consulta run() no contemplada: ${sql}`);
@@ -483,7 +554,7 @@ test("la ruta de base de datos devuelve el contrato usado por React", async () =
 
   assert.equal(response.status, 200);
   assert.equal(data.engine, "Cloudflare D1");
-  assert.deepEqual(data.overview, { users: 1, contacts: 2, weeklyStatsRecords: 0 });
+  assert.deepEqual(data.overview, { users: 1, contacts: 2, weeklyStatsRecords: 0, gameStatEvents: 0 });
   assert.ok(data.currentWeek);
   assert.equal(data.weeklyRecord, null);
 });
@@ -797,6 +868,95 @@ test("los webhooks firmados rechazan replay y no duplican estadísticas", async 
   assert.equal(accepted.status, 200);
   assert.equal((await replay.json()).duplicate, true);
   assert.equal(DB.weeklyRecord.donations, 1);
+});
+
+test("las rutas canónicas de Clothing guardan estadísticas por juego", async () => {
+
+  const DB = new FakeD1();
+  const env = { DB, STATS_SECRET: "clothing-stats-secret" };
+  const response = await worker.fetch(new Request("https://api.example.com/games/Clothing/stats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      secret: "clothing-stats-secret",
+      eventId: "clothing-event-0001",
+      type: "Single",
+      price: 125,
+      creatorId: MY_CREATOR_ID,
+      userId: 4093162315,
+    }),
+  }), env);
+  const data = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(data.game, "Clothing");
+  assert.equal(data.recorded, true);
+  assert.equal(DB.weeklyRecord.single, 1);
+  assert.equal(DB.gameStatEvents.length, 1);
+  assert.equal(DB.gameStatEvents[0].spent, 125);
+  assert.equal(DB.gameStatEvents[0].revenue, 87);
+});
+
+test("Missile registra sus cuatro tipos sin enviar mensajes a Discord", async () => {
+
+  const DB = new FakeD1();
+  const env = { DB, BOMBGAME_SECRET: "bomb-game-secret" };
+  const endpoints = [
+    ["DevProduct/Normal", "devProductNormal"],
+    ["DevProduct/Gift", "devProductGift"],
+    ["Gamepass/Normal", "gamepassNormal"],
+    ["Gamepass/Gift", "gamepassGift"],
+  ];
+
+  for (const [endpoint, metric] of endpoints) {
+    const response = await worker.fetch(new Request(`https://api.example.com/games/Missile/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secret: "bomb-game-secret",
+        eventId: `missile-${endpoint.replace("/", "-").toLowerCase()}-0001`,
+        userId: 4093162315,
+        price: 75,
+      }),
+    }), env);
+    const data = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(data.game, "Missile");
+    assert.equal(data.recorded, true);
+    assert.equal(data.messageSent, false);
+    assert.equal(DB.gameStatEvents.at(-1)[metric], 1);
+  }
+
+  assert.equal(DB.gameStatEvents.length, 4);
+  assert.equal(DB.gameStatEvents.reduce((sum, event) => sum + event.revenue, 0), 300);
+});
+
+test("Games entrega periodos separados y selecciona un solo juego", async () => {
+
+  const session = await adminSession();
+
+  session.DB.gameStatEvents.push({
+    gameKey: "Missile",
+    eventType: "missile_gamepass_normal",
+    spent: 125,
+    revenue: 125,
+    gamepassNormal: 1,
+    createdAt: Math.floor(Date.now() / 1000),
+  });
+
+  const response = await worker.fetch(new Request("https://api.example.com/api/admin/games?game=Missile", {
+    headers: { Cookie: session.cookie },
+  }), session.env);
+  const { analytics } = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(analytics.game.key, "Missile");
+  assert.equal(analytics.games.length, 2);
+  assert.equal(analytics.periods.live.totals.gamepassNormal, 1);
+  assert.equal(analytics.periods.last24Hours.totals.revenue, 125);
+  assert.ok(analytics.periods.last7Days.points.length >= 7);
+  assert.ok(analytics.periods.last30Days.points.length >= 30);
 });
 
 test("las respuestas de error tienen estado y cuerpo JSON", async () => {

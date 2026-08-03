@@ -278,6 +278,58 @@ export async function deleteDiscordMessageBlock(env, userId) {
   await env.DB.prepare("DELETE FROM discord_message_blocklist WHERE user_id = ?").bind(String(userId)).run();
 }
 
+export async function recordGameStatEvent(env, event) {
+
+  const result = await env.DB.prepare(`INSERT OR IGNORE INTO game_stat_events (
+      game_key, event_type, spent, revenue, single_count, bulk_count, donations,
+      devproduct_normal_count, devproduct_gift_count, gamepass_normal_count,
+      gamepass_gift_count, user_id, source_event_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`).bind(
+    event.gameKey,
+    event.eventType,
+    event.spent || 0,
+    event.revenue || 0,
+    event.single || 0,
+    event.bulk || 0,
+    event.donations || 0,
+    event.devProductNormal || 0,
+    event.devProductGift || 0,
+    event.gamepassNormal || 0,
+    event.gamepassGift || 0,
+    event.userId || null,
+    event.sourceEventId || null,
+  ).run();
+
+  return (result?.meta?.changes ?? result?.changes ?? 0) > 0;
+}
+
+export async function getGameStatBuckets(env, gameKey, startTimestamp, endTimestamp, bucketSeconds) {
+
+  const result = await env.DB.prepare(`SELECT
+      CAST(created_at / ? AS INTEGER) * ? AS bucket,
+      SUM(spent) AS spent,
+      SUM(revenue) AS revenue,
+      SUM(single_count) AS single,
+      SUM(bulk_count) AS bulk,
+      SUM(donations) AS donations,
+      SUM(devproduct_normal_count) AS devProductNormal,
+      SUM(devproduct_gift_count) AS devProductGift,
+      SUM(gamepass_normal_count) AS gamepassNormal,
+      SUM(gamepass_gift_count) AS gamepassGift
+    FROM game_stat_events
+    WHERE game_key = ? AND created_at >= ? AND created_at <= ?
+    GROUP BY bucket
+    ORDER BY bucket`).bind(
+    bucketSeconds,
+    bucketSeconds,
+    gameKey,
+    startTimestamp,
+    endTimestamp,
+  ).all();
+
+  return result.results || [];
+}
+
 export async function getPublicSite(env) {
 
   const [settings, contacts] = await Promise.all([
@@ -293,11 +345,12 @@ export async function getPublicSite(env) {
 
 export async function getDatabaseOverview(env) {
 
-  const [users, contacts, stats] = await Promise.all([
+  const [users, contacts, stats, gameEvents] = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) AS count FROM users").first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM contacts").first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM weekly_stats").first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM game_stat_events").first(),
   ]);
   
-  return { users: users.count, contacts: contacts.count, weeklyStatsRecords: stats.count };
+  return { users: users.count, contacts: contacts.count, weeklyStatsRecords: stats.count, gameStatEvents: gameEvents.count };
 }

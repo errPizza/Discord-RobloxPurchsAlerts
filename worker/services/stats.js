@@ -23,14 +23,8 @@ export function normalizePrice(price, isPlusPlayer) {
   return isPlusPlayer && value >= 10 ? Math.round(value / 0.9) : value;
 }
 
-export async function readCurrentStats(env) {
+export function changesForStatsPayload(payload) {
 
-  return getWeeklyStats(env, getWeekKey());
-}
-
-export async function updateWeeklyStats(env, payload) {
-
-  const weekKey = getWeekKey();
   const changes = {};
 
   if (payload.type === "Donation") {
@@ -66,8 +60,20 @@ export async function updateWeeklyStats(env, payload) {
     changes.spent = spent;
     changes.revenue = revenue;
     changes.bulk = 1;
-
   }
+
+  return changes;
+}
+
+export async function readCurrentStats(env) {
+
+  return getWeeklyStats(env, getWeekKey());
+}
+
+export async function updateWeeklyStats(env, payload) {
+
+  const weekKey = getWeekKey();
+  const changes = changesForStatsPayload(payload);
 
   const weeklyStats = await incrementWeeklyStats(env, weekKey, changes);
 

@@ -68,10 +68,10 @@ flowchart LR
 
 Roblox realiza dos operaciones independientes:
 
-1. Envía los datos estadísticos a `POST /stats`.
-2. Envía la información visual a `POST /`, `POST /item` o `POST /bulk` para crear el mensaje de Discord.
+1. Envía los datos estadísticos a `POST /games/Clothing/stats`.
+2. Envía la información visual a `POST /games/Clothing/donation`, `POST /games/Clothing/item` o `POST /games/Clothing/bulk` para crear el mensaje de Discord.
 
-Esta separación es importante. El control del Worker y la lista de UserIds bloqueados solo impiden el segundo paso. `POST /stats` se procesa antes de revisar esas restricciones, por lo que las estadísticas continúan sumándose aunque no se envíe ningún mensaje.
+Esta separación es importante. El control del Worker y la lista de UserIds bloqueados solo impiden el segundo paso. La ruta de estadísticas se procesa antes de revisar esas restricciones, por lo que las estadísticas continúan sumándose aunque no se envíe ningún mensaje. Las rutas de `Missile` solo registran estadísticas y nunca crean mensajes en Discord.
 
 ```mermaid
 flowchart TD
@@ -157,6 +157,7 @@ React Router controla estas vistas:
 | `/signup` | `Signup` | Público |
 | `/dashboard` | `Dashboard` | Admin |
 | `/dashboard/stats` | `Stats` | Admin |
+| `/dashboard/games` | `GamesDashboard` | Admin |
 | `/dashboard/worker` | `WorkerControl` | Admin |
 | `/dashboard/database` | `Database` | Admin |
 | `/dashboard/promote` | `Promote` | Solo propietario |
@@ -173,6 +174,7 @@ Las secciones aparecen mediante `IntersectionObserver`. La barra de navegación 
 `DashboardLayout` valida la sesión antes de mostrar el panel. El contenido se divide en:
 
 - **Resumen:** gráficas semanales, mensuales y globales.
+- **Games:** selector de juego y gráficas en vivo, últimas 24 horas, últimos 7 días y último mes.
 - **Stats:** selección y edición exacta de una semana.
 - **Control Worker:** pausa de mensajes y bloqueo individual por UserId.
 - **DataBase:** conteos generales de D1.
@@ -217,6 +219,7 @@ PASSWORD_PEPPER=
 DONATION_SECRET=
 ITEMS_SECRET=
 STATS_SECRET=
+BOMBGAME_SECRET=
 DONATION_WEBHOOK=
 SINGLE_ITEM_WEBHOOK=
 BULK_ITEMS_WEBHOOK=
@@ -278,9 +281,10 @@ El nombre del Worker es `prchsalerts`. El cron configurado es `0 6 * * 1`, es de
 | --- | --- | --- |
 | `SESSION_SECRET` | Sesiones y OAuth | Firma cookies y estados OAuth. Debe ser largo y aleatorio. |
 | `PASSWORD_PEPPER` | Acceso por correo | Se añade a la contraseña antes de derivar su hash. |
-| `DONATION_SECRET` | Roblox → `/` | Autoriza mensajes de donaciones. |
-| `ITEMS_SECRET` | Roblox → `/item`, `/bulk` | Autoriza mensajes de compras. |
-| `STATS_SECRET` | Roblox → `/stats` | Autoriza actualizaciones estadísticas. |
+| `DONATION_SECRET` | Roblox → `/games/Clothing/donation` | Autoriza mensajes de donaciones. |
+| `ITEMS_SECRET` | Roblox → `/games/Clothing/item`, `/games/Clothing/bulk` | Autoriza mensajes de compras. |
+| `STATS_SECRET` | Roblox → `/games/Clothing/stats` | Autoriza actualizaciones estadísticas de Clothing. |
+| `BOMBGAME_SECRET` | Roblox → `/games/Missile/*` | Autoriza los cuatro eventos estadísticos de Missile. No permite enviar mensajes a Discord. |
 | `DONATION_WEBHOOK` | Discord | Webhook de donaciones. |
 | `SINGLE_ITEM_WEBHOOK` | Discord | Webhook de compras individuales. |
 | `BULK_ITEMS_WEBHOOK` | Discord | Webhook de compras bulk. |
@@ -326,10 +330,16 @@ No configures `frontend` como raíz y no publiques `frontend` directamente. Eso 
 | --- | --- | --- | --- |
 | `GET` | `/api/site` | Ninguno | Devuelve textos y contactos visibles. |
 | `GET` | `/api/status` | Ninguno | Informa si los mensajes están activos o pausados. |
-| `POST` | `/` | `DONATION_SECRET` | Construye y envía el embed de una donación. |
-| `POST` | `/item` | `ITEMS_SECRET` | Construye y envía el embed de una compra individual. |
-| `POST` | `/bulk` | `ITEMS_SECRET` | Construye y envía el embed de una compra bulk. |
-| `POST` | `/stats` | `STATS_SECRET` | Suma estadísticas diarias y semanales. |
+| `POST` | `/games/Clothing/donation` | `DONATION_SECRET` | Construye y envía el embed de una donación. |
+| `POST` | `/games/Clothing/item` | `ITEMS_SECRET` | Construye y envía el embed de una compra individual. |
+| `POST` | `/games/Clothing/bulk` | `ITEMS_SECRET` | Construye y envía el embed de una compra bulk. |
+| `POST` | `/games/Clothing/stats` | `STATS_SECRET` | Suma estadísticas generales y registra el evento de Clothing. |
+| `POST` | `/games/Missile/DevProduct/Normal` | `BOMBGAME_SECRET` | Registra un DevProduct normal sin enviar Discord. |
+| `POST` | `/games/Missile/DevProduct/Gift` | `BOMBGAME_SECRET` | Registra un DevProduct regalado sin enviar Discord. |
+| `POST` | `/games/Missile/Gamepass/Normal` | `BOMBGAME_SECRET` | Registra un Gamepass normal sin enviar Discord. |
+| `POST` | `/games/Missile/Gamepass/Gift` | `BOMBGAME_SECRET` | Registra un Gamepass regalado sin enviar Discord. |
+
+Las rutas antiguas `/`, `/item`, `/bulk` y `/stats` se mantienen como alias temporales para que servidores sin actualizar no pierdan eventos.
 
 Ejemplo mínimo para estadísticas de donación:
 
@@ -391,6 +401,7 @@ Todas las rutas requieren una sesión con rol `admin`. Las rutas de Promote requ
 | Método | Ruta | Función |
 | --- | --- | --- |
 | `GET` | `/api/admin/analytics` | Crea resúmenes semanal, mensual y global. |
+| `GET` | `/api/admin/games?game=Clothing` | Devuelve los cuatro periodos de estadísticas del juego seleccionado. |
 | `GET` | `/api/admin/stats?week=AAAA-WN` | Devuelve una semana y todas las Keys disponibles. |
 | `PUT` | `/api/admin/stats/AAAA-WN` | Reemplaza los cinco valores de una semana. |
 | `GET` | `/api/admin/worker` | Lee el estado de los mensajes. |
@@ -418,7 +429,9 @@ La siguiente referencia cubre todas las funciones con nombre, métodos de entrad
 
 | Función | Qué hace |
 | --- | --- |
-| `handlePublicWebhook(request, env, pathname)` | Valida método, ruta y secret. Procesa `/stats` sin depender del estado de Discord. Para mensajes revisa el interruptor y la blocklist, obtiene imágenes de Roblox, crea el embed correcto y lo envía. |
+| `handlePublicWebhook(request, env, pathname)` | Distribuye las rutas canónicas y sus alias entre Clothing y Missile. |
+| `handleClothingEvent(request, env, pathname, route)` | Procesa estadísticas o mensajes de Clothing; las estadísticas no dependen del estado de Discord. |
+| `handleMissileEvent(request, env, pathname, route)` | Valida `BOMBGAME_SECRET` y registra la compra sin intentar enviar Discord. |
 
 ### `worker/routes/admin.js`
 
@@ -470,8 +483,10 @@ La siguiente referencia cubre todas las funciones con nombre, métodos de entrad
 | `isDiscordUserBlocked(env, userId)` | Comprueba si un UserId está bloqueado. |
 | `addDiscordMessageBlock(env, userId)` | Inserta el UserId si todavía no existe y devuelve la fila. |
 | `deleteDiscordMessageBlock(env, userId)` | Elimina el UserId de la lista. |
+| `recordGameStatEvent(env, event)` | Inserta un evento por juego con deduplicación opcional. |
+| `getGameStatBuckets(env, gameKey, start, end, bucket)` | Agrupa métricas de un juego por intervalo de tiempo. |
 | `getPublicSite(env)` | Devuelve `site_settings` como objeto y los contactos visibles en orden. |
-| `getDatabaseOverview(env)` | Cuenta usuarios, contactos y semanas para DataBase. |
+| `getDatabaseOverview(env)` | Cuenta usuarios, contactos, semanas y eventos de juegos para DataBase. |
 
 ### `worker/services/stats.js`
 
@@ -481,6 +496,7 @@ La siguiente referencia cubre todas las funciones con nombre, métodos de entrad
 | `getWeekKey(date)` | Convierte una fecha UTC a la Key semanal usada por el proyecto, por ejemplo `2026-W30`. |
 | `getDayKey(date)` | Convierte una fecha a `AAAA-MM-DD` en UTC. |
 | `normalizePrice(price, isPlusPlayer)` | Ajusta el precio de jugadores Plus y normaliza valores inválidos a cero. |
+| `changesForStatsPayload(payload)` | Convierte Donation, Single o Bulk en los cambios numéricos que comparten D1 y Games. |
 | `readCurrentStats(env)` | Lee la fila de la semana actual. |
 | `updateWeeklyStats(env, payload)` | Calcula spent, revenue y contadores según Donation, Single o Bulk; actualiza D1 diario y semanal y sincroniza KV. |
 | `syncLegacyStats(env, weeklyStats)` | Copia una semana a KV con timestamp en milisegundos para conservar compatibilidad. |
@@ -503,6 +519,14 @@ La siguiente referencia cubre todas las funciones con nombre, métodos de entrad
 | `mergeWeeklyHistory(databaseRows, legacyRows)` | Une D1 y KV por Key; D1 tiene prioridad. |
 | `getCompleteWeeklyHistory(env)` | Carga D1 y KV en paralelo y devuelve un historial único ordenado. |
 | `getAnalytics(env, now)` | Construye los periodos semanal, mensual y global consumidos por el dashboard. |
+
+### `worker/services/games.js`
+
+| Función o valor | Qué hace |
+| --- | --- |
+| `GAME_CATALOG` | Define los juegos disponibles y las métricas visibles de cada uno. |
+| `getGame(gameKey)` | Busca un juego sin distinguir mayúsculas y minúsculas. |
+| `getGameAnalytics(env, gameKey, now)` | Construye En vivo, 24 horas, 7 días y 30 días con huecos completados en cero. |
 
 ### `worker/services/discord.js`
 
@@ -932,9 +956,10 @@ Falta el Client ID, el Client Secret o ambos. Añade los dos secretos del provee
 
 ### Las estadísticas no aparecen
 
-- Confirma que Roblox envíe `POST /stats`, no solo la petición de mensaje.
+- Confirma que Roblox envíe `POST /games/Clothing/stats`, no solo la petición de mensaje.
 - Comprueba `STATS_SECRET`.
-- Revisa `weekly_stats` y `daily_stats` en D1.
+- Para Missile, comprueba `BOMBGAME_SECRET` y sus cuatro rutas exactas.
+- Revisa `weekly_stats`, `daily_stats` y `game_stat_events` en D1.
 - El resumen combina D1 y KV, pero D1 tiene prioridad cuando existe la misma Key.
 
 ### Se cuentan datos, pero no llega Discord

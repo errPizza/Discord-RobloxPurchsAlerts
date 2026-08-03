@@ -1,5 +1,6 @@
 import { addDiscordMessageBlock, deleteDiscordMessageBlock, deleteUser, getDatabaseOverview, getUserById, getUserProfile, getWeeklyStats, getWorkerEnabled, listDiscordMessageBlocks, listUsers, promoteUser, replaceWeeklyStats, setWorkerEnabled } from "../database/database.js";
 import { getAnalytics, getCompleteWeeklyHistory } from "../services/analytics.js";
+import { getGameAnalytics } from "../services/games.js";
 import { getRobloxUserProfile } from "../services/roblox.js";
 import { emptyStats, getWeekKey, syncLegacyStats } from "../services/stats.js";
 import { requireAdmin, requireOwner } from "./auth.js";
@@ -104,6 +105,18 @@ export async function handleAdmin(request, env, pathname) {
   }
 
   if (pathname === "/api/admin/analytics" && request.method === "GET") return json({ analytics: await getAnalytics(env) });
+
+  if (pathname === "/api/admin/games" && request.method === "GET") {
+
+    const gameKey = new URL(request.url).searchParams.get("game") || "Clothing";
+    const analytics = await getGameAnalytics(env, gameKey);
+
+    if (!analytics) return json({ error: "El juego solicitado no existe." }, { status: 404 });
+
+    return json({ analytics }, {
+      headers: { "Cache-Control": "private, no-store, max-age=0" },
+    });
+  }
 
   if (pathname === "/api/admin/worker" && request.method === "GET") {
 
