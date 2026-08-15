@@ -3,6 +3,7 @@ import test from "node:test";
 
 import worker from "../index.js";
 import { bulkMessage, donationMessage, singleMessage, weeklySummary } from "../services/discord.js";
+import { GameAnalyticsEvents } from "../services/game-events.js";
 import { passwordRequirements } from "../services/password.js";
 import { getAvatarUrls } from "../services/roblox.js";
 import { MY_CREATOR_ID, updateWeeklyStats } from "../services/stats.js";
@@ -370,6 +371,47 @@ async function adminSession(DB = new FakeD1()) {
 
   return { DB, env, cookie: response.headers.get("Set-Cookie").split(";", 1)[0] };
 }
+
+function gameEventsBinding(notifications) {
+  return {
+    getByName: (name) => {
+      assert.equal(name, "game-analytics");
+
+      return {
+        fetch: async (input, init) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+
+          notifications.push(await request.json());
+
+          return Response.json({ delivered: 1 });
+        },
+      };
+    },
+  };
+}
+
+test("el canal en vivo entrega la compra solo a los clientes del juego", async () => {
+  const messages = [];
+  const state = {
+    getWebSockets: (tag) => {
+      assert.equal(tag, "Missile");
+
+      return [{ send: (message) => messages.push(JSON.parse(message)) }];
+    },
+  };
+  const events = new GameAnalyticsEvents(state);
+  const response = await events.fetch(new Request("https://game-events.internal/notify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gameKey: "missile" }),
+  }));
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).delivered, 1);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].type, "purchase");
+  assert.equal(messages[0].gameKey, "Missile");
+});
 
 function responseCookie(response, name) {
   const values = typeof response.headers.getSetCookie === "function" ? response.headers.getSetCookie() : [response.headers.get("Set-Cookie")].filter(Boolean);
@@ -873,7 +915,8 @@ test("los webhooks firmados rechazan replay y no duplican estadísticas", async 
 test("las rutas canónicas de Clothing guardan estadísticas por juego", async () => {
 
   const DB = new FakeD1();
-  const env = { DB, STATS_SECRET: "clothing-stats-secret" };
+  const notifications = [];
+  const env = { DB, STATS_SECRET: "clothing-stats-secret", GAME_ANALYTICS_EVENTS: gameEventsBinding(notifications) };
   const response = await worker.fetch(new Request("https://api.example.com/games/Clothing/stats", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -895,12 +938,14 @@ test("las rutas canónicas de Clothing guardan estadísticas por juego", async (
   assert.equal(DB.gameStatEvents.length, 1);
   assert.equal(DB.gameStatEvents[0].spent, 125);
   assert.equal(DB.gameStatEvents[0].revenue, 87);
+  assert.deepEqual(notifications, [{ gameKey: "Clothing" }]);
 });
 
 test("Missile registra sus cuatro tipos sin enviar mensajes a Discord", async () => {
 
   const DB = new FakeD1();
-  const env = { DB, BOMBGAME_SECRET: "bomb-game-secret" };
+  const notifications = [];
+  const env = { DB, BOMBGAME_SECRET: "bomb-game-secret", GAME_ANALYTICS_EVENTS: gameEventsBinding(notifications) };
   const endpoints = [
     ["DevProduct/Normal", "devProductNormal"],
     ["DevProduct/Gift", "devProductGift"],
@@ -930,6 +975,7 @@ test("Missile registra sus cuatro tipos sin enviar mensajes a Discord", async ()
 
   assert.equal(DB.gameStatEvents.length, 4);
   assert.equal(DB.gameStatEvents.reduce((sum, event) => sum + event.revenue, 0), 300);
+  assert.deepEqual(notifications, Array.from({ length: 4 }, () => ({ gameKey: "Missile" })));
 });
 
 test("Games entrega periodos separados y selecciona un solo juego", async () => {

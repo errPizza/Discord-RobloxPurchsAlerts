@@ -1,5 +1,6 @@
 import { addDiscordMessageBlock, deleteDiscordMessageBlock, deleteUser, getDatabaseOverview, getUserById, getUserProfile, getWeeklyStats, getWorkerEnabled, listDiscordMessageBlocks, listUsers, promoteUser, replaceWeeklyStats, setWorkerEnabled } from "../database/database.js";
 import { getAnalytics, getCompleteWeeklyHistory } from "../services/analytics.js";
+import { connectToGameEvents } from "../services/game-events.js";
 import { getGameAnalytics } from "../services/games.js";
 import { getRobloxUserProfile } from "../services/roblox.js";
 import { emptyStats, getWeekKey, syncLegacyStats } from "../services/stats.js";
@@ -116,6 +117,15 @@ export async function handleAdmin(request, env, pathname) {
     return json({ analytics }, {
       headers: { "Cache-Control": "private, no-store, max-age=0" },
     });
+  }
+
+  if (pathname === "/api/admin/games/events" && request.method === "GET") {
+
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return json({ error: "Esta ruta requiere una conexión WebSocket." }, { status: 426 });
+    }
+
+    return connectToGameEvents(request, env);
   }
 
   if (pathname === "/api/admin/worker" && request.method === "GET") {

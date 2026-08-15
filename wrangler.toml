@@ -35,6 +35,14 @@ database_name = "another-game-more"
 database_id = "12fff928-a2c4-4b29-83ae-021b9621dac1"
 migrations_dir = "worker/database/migrations"
 
+[[durable_objects.bindings]]
+name = "GAME_ANALYTICS_EVENTS"
+class_name = "GameAnalyticsEvents"
+
+[[migrations]]
+tag = "game-analytics-events-v1"
+new_sqlite_classes = ["GameAnalyticsEvents"]
+
 [[kv_namespaces]]
 binding = "WEEKLY_STATS"
 id = "420ea278f9c0497dbf84832983d4881b"

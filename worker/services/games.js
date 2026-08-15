@@ -16,7 +16,7 @@ export const GAME_CATALOG = [
 ];
 
 const PERIODS = [
-  { key: "live", title: "En vivo", subtitle: "Actividad de la última hora. Se actualiza cada cinco segundos.", duration: 60 * 60, bucket: 5 * 60, label: "time" },
+  { key: "live", title: "En vivo", subtitle: "Actividad de la última hora. Se actualiza al recibir cada compra.", duration: 60 * 60, bucket: 5 * 60, label: "time" },
   { key: "last24Hours", title: "Últimas 24 horas", subtitle: "Actividad agrupada por hora.", duration: 24 * 60 * 60, bucket: 60 * 60, label: "hour" },
   { key: "last7Days", title: "Últimos 7 días", subtitle: "Actividad diaria de la última semana.", duration: 7 * 24 * 60 * 60, bucket: 24 * 60 * 60, label: "day" },
   { key: "last30Days", title: "Último mes", subtitle: "Actividad diaria de los últimos 30 días.", duration: 30 * 24 * 60 * 60, bucket: 24 * 60 * 60, label: "day" },

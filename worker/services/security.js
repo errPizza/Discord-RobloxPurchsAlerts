@@ -115,6 +115,8 @@ export function signedWebhooksRequired(env) {
 
 export function applySecurityHeaders(response, request, requestId = crypto.randomUUID()) {
 
+  if (response.webSocket) return response;
+
   const headers = new Headers(response.headers);
   const pathname = new URL(request.url).pathname;
   const contentType = headers.get("Content-Type") || "";

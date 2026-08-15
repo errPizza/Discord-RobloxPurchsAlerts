@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import DataCard from "../components/dashboard/DataCard.jsx";
+import GameSelect from "../components/dashboard/GameSelect.jsx";
 import LineChart from "../components/dashboard/LineChart.jsx";
 import { METRICS } from "../components/dashboard/metrics.js";
-import { api } from "../services/api.js";
+import { api, webSocketUrl } from "../services/api.js";
 
 const PERIOD_ORDER = ["live", "last24Hours", "last7Days", "last30Days"];
 
@@ -21,35 +22,89 @@ export default function GamesDashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [liveConnection, setLiveConnection] = useState("connecting");
 
   useEffect(() => {
     let active = true;
+    let requestRunning = false;
+    let refreshQueued = false;
+    let reconnectAttempts = 0;
+    let reconnectTimer;
+    let socket;
 
     async function load(silent = false) {
+      if (requestRunning) {
+        refreshQueued = true;
+        return;
+      }
+
+      requestRunning = true;
+
       if (!silent) setLoading(true);
 
-      try {
-        const result = await api(`/api/admin/games?game=${encodeURIComponent(selectedGame)}`);
+      do {
+        refreshQueued = false;
 
+        try {
+          const result = await api(`/api/admin/games?game=${encodeURIComponent(selectedGame)}`);
+
+          if (!active) return;
+
+          setAnalytics(result.analytics);
+          setError("");
+        } catch (requestError) {
+          if (active) setError(requestError.message);
+        }
+      } while (active && refreshQueued);
+
+      requestRunning = false;
+
+      if (active && !silent) setLoading(false);
+    }
+
+    function connect() {
+      if (!active) return;
+
+      setLiveConnection(reconnectAttempts ? "reconnecting" : "connecting");
+      socket = new WebSocket(webSocketUrl(`/api/admin/games/events?game=${encodeURIComponent(selectedGame)}`));
+
+      socket.addEventListener("open", () => {
         if (!active) return;
 
-        setAnalytics(result.analytics);
-        setError("");
-      } catch (requestError) {
-        if (active) setError(requestError.message);
-      } finally {
-        if (active && !silent) setLoading(false);
-      }
+        reconnectAttempts = 0;
+        setLiveConnection("connected");
+        load(true);
+      });
+
+      socket.addEventListener("message", (event) => {
+        if (!active) return;
+
+        try {
+          const purchase = JSON.parse(event.data);
+
+          if (purchase.type === "purchase" && purchase.gameKey === selectedGame) load(true);
+        } catch { /* Ignore control frames that are not purchase events. */ }
+      });
+
+      socket.addEventListener("close", () => {
+        if (!active) return;
+
+        setLiveConnection("reconnecting");
+        reconnectAttempts += 1;
+        reconnectTimer = window.setTimeout(connect, Math.min(1000 * (2 ** (reconnectAttempts - 1)), 15000));
+      });
+
+      socket.addEventListener("error", () => socket.close());
     }
 
     setAnalytics(null);
     load();
-
-    const interval = window.setInterval(() => load(true), 5000);
+    connect();
 
     return () => {
       active = false;
-      window.clearInterval(interval);
+      window.clearTimeout(reconnectTimer);
+      socket?.close(1000, "Cambio de vista");
     };
   }, [selectedGame]);
 
@@ -57,6 +112,10 @@ export default function GamesDashboard() {
     { key: "Clothing", name: "Lacywings Outfits" },
     { key: "Missile", name: "Missile" },
   ];
+  const liveLabel = liveConnection === "connected"
+    ? `En vivo · ${readableUpdate(analytics?.generatedAt)}`
+    : liveConnection === "reconnecting" ? "Reconectando en vivo…" : "Conectando en vivo…";
+  const liveHasError = Boolean(error) || liveConnection === "reconnecting";
 
   return <div className="games-dashboard-page">
     <div className="games-dashboard-heading">
@@ -67,13 +126,8 @@ export default function GamesDashboard() {
       </div>
       <div className="game-dashboard-controls">
         <label htmlFor="dashboard-game">Seleccionar juego</label>
-        <div className="game-dashboard-select">
-          <select id="dashboard-game" value={selectedGame} onChange={(event) => setSelectedGame(event.target.value)} disabled={loading}>
-            {games.map((game) => <option value={game.key} key={game.key}>{game.name}</option>)}
-          </select>
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7.5 5 5 5-5" /></svg>
-        </div>
-        <span className={`games-live-indicator${error ? " has-error" : ""}`}><i />{error ? "Conexión interrumpida" : `En vivo · ${readableUpdate(analytics?.generatedAt)}`}</span>
+        <GameSelect id="dashboard-game" value={selectedGame} options={games} onChange={setSelectedGame} disabled={loading} />
+        <span className={`games-live-indicator${liveHasError ? " has-error" : ""}`}><i />{error && !analytics ? "Conexión interrumpida" : liveLabel}</span>
       </div>
     </div>
 

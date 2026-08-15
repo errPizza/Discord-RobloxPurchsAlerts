@@ -9,6 +9,8 @@ import { getWorkerEnabled } from "./database/database.js";
 import { applySecurityHeaders } from "./services/security.js";
 import { json } from "./utils/response.js";
 
+export { GameAnalyticsEvents } from "./services/game-events.js";
+
 export default {
 
   async fetch(request, env) {

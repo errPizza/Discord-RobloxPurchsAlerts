@@ -1,4 +1,5 @@
 import { bulkMessage, donationMessage, sendDiscord, singleMessage } from "../services/discord.js";
+import { notifyGamePurchase } from "../services/game-events.js";
 import { getAvatarUrl, getGroupIconUrl, getItemThumbnailUrl } from "../services/roblox.js";
 import { changesForStatsPayload, readCurrentStats, updateWeeklyStats } from "../services/stats.js";
 import { claimWebhookEvent, getWorkerEnabled, isDiscordUserBlocked, recordGameStatEvent } from "../database/database.js";
@@ -171,6 +172,8 @@ async function handleMissileEvent(request, env, pathname, route) {
     sourceEventId,
   });
 
+  if (inserted) await notifyGamePurchase(env, "Missile");
+
   return json({
     success: true,
     game: "Missile",
@@ -216,7 +219,7 @@ async function handleClothingEvent(request, env, pathname, route) {
 
     const changes = changesForStatsPayload(data);
     await updateWeeklyStats(env, data);
-    await recordGameStatEvent(env, {
+    const inserted = await recordGameStatEvent(env, {
       gameKey: "Clothing",
       eventType: `clothing_${String(data.type).toLowerCase()}`,
       ...changes,
@@ -224,7 +227,9 @@ async function handleClothingEvent(request, env, pathname, route) {
       sourceEventId: deduplicationId,
     });
 
-    return json({ success: true, game: "Clothing", recorded: true, messageSent: false });
+    if (inserted) await notifyGamePurchase(env, "Clothing");
+
+    return json({ success: true, game: "Clothing", recorded: inserted, messageSent: false });
   }
 
   try { validateUserId(data.userId); } catch (error) { return json({ success: false, error: error.message }, { status: 400 }); }

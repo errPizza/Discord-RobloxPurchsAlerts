@@ -1111,40 +1111,9 @@ section[id], .stats-bar[id], .contact-grid[id]{scroll-margin-block:18vh}
   letter-spacing:.14em;
   text-transform:uppercase;
 }
-.game-dashboard-select{position:relative}
-.game-dashboard-select select{
-  width:100%;
-  min-height:45px;
-  appearance:none;
-  padding:0 42px 0 14px;
-  border:1px solid rgba(255,255,255,.14);
-  border-radius:7px;
-  background:linear-gradient(145deg,#121310,#090a09);
-  color:#f0ede8;
-  font:500 13px 'DM Sans';
-  cursor:pointer;
-  outline:0;
-  transition:border-color .22s,box-shadow .22s;
-}
-.game-dashboard-select select:focus{
-  border-color:rgba(220,65,56,.65);
-  box-shadow:0 0 0 3px rgba(189,41,35,.1);
-}
-.game-dashboard-select select:disabled{cursor:wait;opacity:.65}
-.game-dashboard-select svg{
-  position:absolute;
-  top:50%;
-  right:13px;
-  width:18px;
-  height:18px;
-  pointer-events:none;
-  fill:none;
-  stroke:#a29e99;
-  stroke-width:1.8;
-  stroke-linecap:round;
-  stroke-linejoin:round;
-  transform:translateY(-50%);
-}
+.game-dashboard-controls .game-select{margin-top:0}
+.game-dashboard-controls .game-select .week-select-trigger{min-height:45px}
+.game-dashboard-controls .game-select .week-select-menu{left:0;right:auto;width:100%}
 .games-live-indicator{
   display:flex;
   align-items:center;
