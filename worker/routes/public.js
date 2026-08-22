@@ -148,9 +148,11 @@ async function handleMissileEvent(request, env, pathname, route) {
   let sourceEventId;
   let amount;
   let revenue;
+  let userId;
 
   try {
-    validateUserId(data.userId);
+    userId = data.userId ?? data.player?.userId;
+    validateUserId(userId);
     sourceEventId = getEventId(data, signature);
     amount = missileAmount(data);
     revenue = integer(data.revenue ?? data.received ?? data.net ?? amount, "revenue");
@@ -168,7 +170,7 @@ async function handleMissileEvent(request, env, pathname, route) {
     spent: amount,
     revenue,
     [route.metric]: 1,
-    userId: data.userId ? String(data.userId) : null,
+    userId: userId ? String(userId) : null,
     sourceEventId,
   });
 

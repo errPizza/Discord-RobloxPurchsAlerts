@@ -83,7 +83,8 @@ export function validSecret(request, bodySecret, expectedSecret) {
 
   const authorization = request.headers.get("Authorization") || "";
   const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-  const supplied = bearer || String(bodySecret || "");
+  const webhookSecret = request.headers.get("X-Webhook-Secret") || "";
+  const supplied = bearer || webhookSecret || String(bodySecret || "");
 
   return Boolean(supplied) && safeEqual(supplied, String(expectedSecret));
 }

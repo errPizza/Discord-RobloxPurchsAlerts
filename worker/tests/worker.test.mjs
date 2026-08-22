@@ -7,6 +7,7 @@ import { GameAnalyticsEvents } from "../services/game-events.js";
 import { passwordRequirements } from "../services/password.js";
 import { getAvatarUrls } from "../services/roblox.js";
 import { MY_CREATOR_ID, updateWeeklyStats } from "../services/stats.js";
+import { validSecret } from "../services/security.js";
 import { hmacSha256 } from "../utils/crypto.js";
 
 class FakeD1 {
@@ -976,6 +977,60 @@ test("Missile registra sus cuatro tipos sin enviar mensajes a Discord", async ()
   assert.equal(DB.gameStatEvents.length, 4);
   assert.equal(DB.gameStatEvents.reduce((sum, event) => sum + event.revenue, 0), 300);
   assert.deepEqual(notifications, Array.from({ length: 4 }, () => ({ gameKey: "Missile" })));
+});
+
+test("Missile acepta el encabezado y el payload anidado que envía Roblox", async () => {
+
+  const DB = new FakeD1();
+  const env = { DB, BOMBGAME_SECRET: "roblox-purchase-secret" };
+  const response = await worker.fetch(new Request("https://api.example.com/games/Missile/DevProduct/Normal", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Webhook-Secret": "roblox-purchase-secret",
+      "X-Idempotency-Key": "roblox-purchase-0001",
+    },
+    body: JSON.stringify({
+      eventId: "roblox-purchase-0001",
+      id: 123456789,
+      name: "Misil normal",
+      amount: 150,
+      amountPaid: 135,
+      plusDiscount: 15,
+      hasPlusDiscount: true,
+      player: {
+        userId: 4093162315,
+        username: "PlayerName",
+        displayName: "Player Display",
+      },
+      placeId: 987654321,
+      jobId: "server-job-id",
+      timestamp: Math.floor(Date.now() / 1000),
+      isStudio: false,
+    }),
+  }), env);
+  const data = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(data.recorded, true);
+  assert.equal(DB.gameStatEvents.length, 1);
+  assert.equal(DB.gameStatEvents[0].spent, 150);
+  assert.equal(DB.gameStatEvents[0].revenue, 150);
+  assert.equal(DB.gameStatEvents[0].userId, "4093162315");
+});
+
+test("la autenticación conserva Bearer y secret en JSON además del encabezado de Roblox", () => {
+
+  assert.equal(validSecret(new Request("https://api.example.com", {
+    headers: { Authorization: "Bearer shared-secret" },
+  }), null, "shared-secret"), true);
+  assert.equal(validSecret(new Request("https://api.example.com", {
+    headers: { "X-Webhook-Secret": "shared-secret" },
+  }), null, "shared-secret"), true);
+  assert.equal(validSecret(new Request("https://api.example.com"), "shared-secret", "shared-secret"), true);
+  assert.equal(validSecret(new Request("https://api.example.com", {
+    headers: { "X-Webhook-Secret": "incorrect-secret" },
+  }), null, "shared-secret"), false);
 });
 
 test("Games entrega periodos separados y selecciona un solo juego", async () => {
