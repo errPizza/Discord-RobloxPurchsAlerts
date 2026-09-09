@@ -2,13 +2,24 @@
   "name": "prchsalerts",
   "private": true,
   "type": "module",
-  "scripts": {
-    "postinstall": "npm run build",
-    "build": "npm ci --prefix frontend && npm run build --prefix frontend",
-    "test": "node --test worker/tests/worker.test.mjs frontend/tests/scroll.test.mjs && npm run lint --prefix frontend",
-    "deploy": "npm run build && wrangler deploy --keep-vars"
+  "engines": {
+    "node": ">=22.13.0"
   },
-  "devDependencies": {
-    "wrangler": "4.112.0"
+  "scripts": {
+    "build": "npm ci --prefix frontend && npm run build --prefix frontend",
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test server/tests/*.test.mjs frontend/tests/scroll.test.mjs && npm run lint --prefix frontend",
+    "db:migrate": "node server/scripts/migrate.js",
+    "db:import": "node server/scripts/import-d1.js",
+    "db:backup": "node server/scripts/backup.js",
+    "user:create-owner": "node server/scripts/create-owner.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/static": "^8.2.0",
+    "@fastify/websocket": "^11.1.0",
+    "better-sqlite3": "^12.7.0",
+    "fastify": "^5.6.2"
   }
 }

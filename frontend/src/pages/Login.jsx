@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import StudioLogo from "../components/common/StudioLogo.jsx";
 import PlatformIcon from "../components/common/PlatformIcon.jsx";
-import TurnstileWidget from "../components/auth/TurnstileWidget.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 import { getProviders } from "../services/auth.js";
 
@@ -33,14 +32,11 @@ export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [providers, setProviders] = useState({ google: false, discord: false });
-  const [turnstileSiteKey, setTurnstileSiteKey] = useState(null);
-  const [turnstileToken, setTurnstileToken] = useState("");
-  const [challengeKey, setChallengeKey] = useState(0);
   const [error, setError] = useState(() => oauthErrors[searchParams.get("auth_error")] || "");
   const [submitting, setSubmitting] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
-  useEffect(() => { getProviders().then((result) => { setProviders(result.providers); setTurnstileSiteKey(result.turnstileSiteKey || null); }).catch(() => {}); }, []);
+  useEffect(() => { getProviders().then((result) => setProviders(result.providers)).catch(() => {}); }, []);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -50,15 +46,13 @@ export default function Login() {
     const form = new FormData(event.currentTarget);
 
     try {
-      const next = await login(form.get("email"), form.get("password"), turnstileToken);
+      const next = await login(form.get("email"), form.get("password"));
 
       setLeaving(true);
       window.setTimeout(() => navigate(next.isAdmin ? "/dashboard" : "/"), 320);
     } catch (err) {
       setError(err.message);
       setSubmitting(false);
-      setTurnstileToken("");
-      setChallengeKey((current) => current + 1);
     }
   };
 
@@ -78,9 +72,8 @@ export default function Login() {
         <label>Correo<input name="email" type="email" autoComplete="email" required disabled={submitting} /></label>
         <label>Contraseña<input name="password" type="password" autoComplete="current-password" required disabled={submitting} /></label>
       </div>
-      <TurnstileWidget key={challengeKey} siteKey={turnstileSiteKey} action="login" onToken={setTurnstileToken} />
       {error && <div className="form-error" role="alert">{error}</div>}
-      <button className="button red" type="submit" disabled={submitting || Boolean(turnstileSiteKey && !turnstileToken)}>
+      <button className="button red" type="submit" disabled={submitting}>
         <span>{leaving ? "Acceso concedido" : submitting ? "Verificando…" : "Entrar"}</span>
         <b>{submitting && !leaving ? <i className="button-spinner" /> : "›"}</b>
       </button>

@@ -1,0 +1,23 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: another-game-more:local
+    container_name: another-game-more
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - /mnt/appdata:/app/data
+      - /mnt/backups:/app/backups
+      # Enable only after installing the restricted local Docker API proxy.
+      # - /var/run/agm-docker-proxy.sock:/var/run/docker.sock
+      # Enable only after installing ops/agm-host-control.service on the host.
+      # - /run/agm-host-control.sock:/run/agm-host-control.sock
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true

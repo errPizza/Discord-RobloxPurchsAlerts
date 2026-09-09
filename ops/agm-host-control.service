@@ -1,0 +1,20 @@
+[Unit]
+Description=Another Game More restricted host control helper
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=agmapp
+EnvironmentFile=/etc/another-game-more/host-control.env
+ExecStart=/usr/bin/node /opt/another-game-more/ops/host-control.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/run
+
+[Install]
+WantedBy=multi-user.target
