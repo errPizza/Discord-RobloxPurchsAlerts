@@ -135,4 +135,31 @@ export function registerAdminRoutes(app, services) {
     audit.record({ userId: owner.id, action: "user_delete", target: String(id), result: "success" });
     return { success: true, deletedUser: { id: user.id, email: user.email } };
   });
+
+  app.get("/api/admin/mobile/sessions", async (request, reply) => {
+    if (!guard(request, reply)) return;
+    return { sessions: db.prepare(`SELECT ms.id, ms.user_id AS userId, u.email, ms.device_name AS deviceName, ms.platform,
+      ms.app_version AS appVersion, ms.status, ms.requested_at AS requestedAt, ms.approved_at AS approvedAt,
+      ms.last_seen_at AS lastSeenAt FROM mobile_sessions ms JOIN users u ON u.id = ms.user_id
+      ORDER BY ms.requested_at DESC LIMIT 100`).all() };
+  });
+  app.post("/api/admin/mobile/sessions/:id/approve", async (request, reply) => {
+    const user = guard(request, reply, { mutation: true }); if (!user) return;
+    const session = db.prepare("SELECT id, device_name FROM mobile_sessions WHERE id = ?").get(request.params.id);
+    if (!session) return reply.code(404).send({ error: "Sesión no encontrada." });
+    db.prepare("UPDATE mobile_sessions SET status = 'approved', approved_at = unixepoch(), approved_by = ?, revoked_at = NULL, revoked_by = NULL WHERE id = ?").run(user.id, session.id);
+    audit.record({ userId: user.id, mobileSessionId: session.id, deviceName: session.device_name, action: "mobile_session_approve", result: "success" });
+    return { success: true, session: { id: session.id, status: "approved" } };
+  });
+  app.post("/api/admin/mobile/sessions/:id/revoke", async (request, reply) => {
+    const user = guard(request, reply, { mutation: true }); if (!user) return;
+    const session = db.prepare("SELECT id, device_name FROM mobile_sessions WHERE id = ?").get(request.params.id);
+    if (!session) return reply.code(404).send({ error: "Sesión no encontrada." });
+    db.transaction(() => {
+      db.prepare("UPDATE mobile_sessions SET status = 'revoked', revoked_at = unixepoch(), revoked_by = ? WHERE id = ?").run(user.id, session.id);
+      db.prepare("UPDATE mobile_refresh_tokens SET revoked_at = unixepoch() WHERE mobile_session_id = ? AND revoked_at IS NULL").run(session.id);
+    })();
+    audit.record({ userId: user.id, mobileSessionId: session.id, deviceName: session.device_name, action: "mobile_session_revoke", result: "success" });
+    return { success: true };
+  });
 }

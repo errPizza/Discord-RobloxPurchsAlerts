@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     network_mode: host
     env_file:
-      - .env
+      - ${ENV_FILE:-.env}
     volumes:
       - /mnt/appdata:/app/data
       - /mnt/backups:/app/backups
@@ -21,3 +21,5 @@ services:
       - /tmp:rw,noexec,nosuid,size=64m
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - ${AGM_SOCKET_GID:-1000}

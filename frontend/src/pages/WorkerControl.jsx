@@ -122,7 +122,7 @@ export default function WorkerControl() {
       </button>
     </section>
     {error && <div className="panel-message error-message">{error}</div>}
-    <div className="control-note"><strong>Importante</strong><span>El interruptor y la lista inferior controlan únicamente Discord. La API, D1 y el conteo de estadísticas permanecen activos.</span></div>
+    <div className="control-note"><strong>Importante</strong><span>El interruptor y la lista inferior controlan únicamente Discord. La API, SQLite local y el conteo de estadísticas permanecen activos.</span></div>
 
     <section className="blocked-users-panel">
       <div className="blocked-users-heading">

@@ -9,9 +9,31 @@ import { normalizedEmail } from "../services/security.js";
 
 const config = loadConfig();
 const cli = readline.createInterface({ input, output });
+
+async function hiddenQuestion(question) {
+  if (!input.isTTY) return cli.question(question);
+  output.write(question);
+  input.setRawMode(true);
+  input.resume();
+  let value = "";
+  for await (const chunk of input) {
+    const key = String(chunk);
+    if (key === "\r" || key === "\n") break;
+    if (key === "\u0003") process.exit(130);
+    if (key === "\u0008" || key === "\u007f") {
+      if (value) { value = value.slice(0, -1); output.write("\b \b"); }
+      continue;
+    }
+    if (/^[^\u0000-\u001f\u007f]+$/.test(key)) { value += key; output.write("*"); }
+  }
+  input.setRawMode(false);
+  output.write("\n");
+  return value;
+}
+
 try {
   const email = normalizedEmail(process.argv[2] || await cli.question("Correo de la cuenta owner: "));
-  const password = await cli.question("Contraseña inicial (se mostrará al escribir): ");
+  const password = await hiddenQuestion("Contraseña inicial: ");
   if (!email) throw new Error("El correo no es válido.");
   const requirement = passwordRequirements(password, email);
   if (requirement) throw new Error(requirement);

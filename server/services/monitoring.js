@@ -6,6 +6,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { hmac } from "./crypto.js";
 
+let previousCpuSample = null;
+
 async function readText(file) {
   try { return (await fs.readFile(file, "utf8")).trim(); } catch { return null; }
 }
@@ -16,21 +18,38 @@ async function thermalTemperature() {
   return Number.isFinite(temperature) ? Math.round(temperature / 100) / 10 : null;
 }
 
+async function cpuUsage() {
+  const stat = await readText("/proc/stat");
+  const fields = stat?.split("\n")[0]?.trim().split(/\s+/).slice(1).map(Number);
+  if (!fields?.length || fields.some((value) => !Number.isFinite(value))) return null;
+  const idle = (fields[3] || 0) + (fields[4] || 0);
+  const total = fields.reduce((sum, value) => sum + value, 0);
+  const current = { idle, total };
+  const previous = previousCpuSample;
+  previousCpuSample = current;
+  if (!previous || current.total <= previous.total) return null;
+  return Math.round((1 - (current.idle - previous.idle) / (current.total - previous.total)) * 1_000) / 10;
+}
+
 export async function systemSnapshot(dataPath) {
-  const [uptimeRaw, bootId, temperature, stat] = await Promise.all([
-    readText("/proc/uptime"), readText("/proc/sys/kernel/random/boot_id"), thermalTemperature(), fs.statfs(dataPath).catch(() => null),
+  const [uptimeRaw, bootId, temperature, stat, usagePercent] = await Promise.all([
+    readText("/proc/uptime"), readText("/proc/sys/kernel/random/boot_id"), thermalTemperature(), fs.statfs(dataPath).catch(() => null), cpuUsage(),
   ]);
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
   const disk = stat ? { total: Number(stat.blocks) * Number(stat.bsize), free: Number(stat.bfree) * Number(stat.bsize), available: Number(stat.bavail) * Number(stat.bsize) } : null;
+  let network = [];
+  try {
+    network = Object.entries(os.networkInterfaces()).map(([name, addresses]) => ({ name, addresses: (addresses || []).filter((entry) => !entry.internal).map(({ address, family, mac }) => ({ address, family, mac })) }));
+  } catch { /* Network enumeration can be unavailable in a restricted container. */ }
   return {
     available: true,
-    cpu: { model: os.cpus()[0]?.model || "unknown", cores: os.cpus().length, loadAverage: os.loadavg(), usagePercent: Math.round(Math.min(100, (os.loadavg()[0] / Math.max(os.cpus().length, 1)) * 100) * 10) / 10 },
+    cpu: { model: os.cpus()[0]?.model || "unknown", cores: os.cpus().length, loadAverage: os.loadavg(), usagePercent },
     memory: { total: totalMem, free: freeMem, used: totalMem - freeMem, usedPercent: Math.round(((totalMem - freeMem) / totalMem) * 1000) / 10 },
     temperature: { available: temperature !== null, celsius: temperature },
     uptimeSeconds: Math.floor(Number(String(uptimeRaw || "0").split(" ")[0]) || os.uptime()),
     storage: disk ? { ...disk, used: disk.total - disk.free, usedPercent: Math.round(((disk.total - disk.free) / disk.total) * 1000) / 10, path: dataPath } : { available: false },
-    network: Object.entries(os.networkInterfaces()).map(([name, addresses]) => ({ name, addresses: (addresses || []).filter((entry) => !entry.internal).map(({ address, family, mac }) => ({ address, family, mac })) })),
+    network,
     architecture: process.arch,
     kernel: os.release(),
     hostname: os.hostname(),
@@ -69,11 +88,14 @@ export function createDockerService(config) {
       const containers = await dockerRequest(config.dockerSocketPath, "/containers/json?all=1");
       const details = await Promise.all(containers.slice(0, 100).map(async (container) => {
         let stats = null;
+        let inspect = null;
         try { stats = await dockerRequest(config.dockerSocketPath, `/containers/${encodeURIComponent(container.Id)}/stats?stream=false`); } catch { /* A stopped container has no stats. */ }
-        const cpu = stats?.cpu_stats?.cpu_usage?.total_usage && stats?.precpu_stats?.cpu_usage?.total_usage
-          ? Math.max(0, stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage) : 0;
+        try { inspect = await dockerRequest(config.dockerSocketPath, `/containers/${encodeURIComponent(container.Id)}/json`); } catch { /* Container could disappear while inspecting. */ }
+        const cpuDelta = Number(stats?.cpu_stats?.cpu_usage?.total_usage || 0) - Number(stats?.precpu_stats?.cpu_usage?.total_usage || 0);
+        const systemDelta = Number(stats?.cpu_stats?.system_cpu_usage || 0) - Number(stats?.precpu_stats?.system_cpu_usage || 0);
+        const cpu = cpuDelta > 0 && systemDelta > 0 ? Math.round((cpuDelta / systemDelta) * Number(stats?.cpu_stats?.online_cpus || 1) * 10_000) / 100 : null;
         const memory = stats?.memory_stats?.usage || 0;
-        return { id: container.Id, name: (container.Names?.[0] || "").replace(/^\//, ""), image: container.Image, state: container.State, status: container.Status, created: container.Created, restartCount: container.RestartCount ?? null, network: Object.keys(container.NetworkSettings?.Networks || {}), cpuDelta: cpu, memoryBytes: memory };
+        return { id: container.Id, name: (container.Names?.[0] || "").replace(/^\//, ""), image: container.Image, state: container.State, status: container.Status, created: container.Created, restartCount: inspect?.RestartCount ?? null, startedAt: inspect?.State?.StartedAt ?? null, network: Object.keys(container.NetworkSettings?.Networks || {}), cpuPercent: cpu, memoryBytes: memory };
       }));
       return { available: true, containers: details };
     } catch { return unavailable(); }
@@ -115,6 +137,16 @@ export function nginxStatus(config) {
   return config.nginxEnabled ? { available: false, reason: "El estado Nginx requiere un helper local configurado." } : { available: false, reason: "Nginx no está habilitado en esta instalación." };
 }
 
+export class PowerMonitor {
+  async read() {
+    // Punto de extensión para un UPS, HAT, medidor USB o driver I²C real.
+    // No debe devolver estimaciones cuando no existe un sensor instalado.
+    return { available: false, watts: null, voltage: null, current: null, energyKwh: null, reason: "No hay un sensor, UPS, HAT o medidor USB configurado." };
+  }
+}
+
+const powerMonitor = new PowerMonitor();
+
 export function powerStatus() {
-  return { available: false, watts: null, voltage: null, current: null, energyKwh: null, reason: "No hay un sensor, UPS, HAT o medidor USB configurado." };
+  return powerMonitor.read();
 }

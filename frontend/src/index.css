@@ -860,9 +860,6 @@ section[id], .stats-bar[id], .contact-grid[id]{scroll-margin-block:18vh}
 }
 
 /* Human verification */
-.turnstile-field{display:grid;gap:8px}
-.turnstile-field > span{color:#8b8782;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
-.turnstile-field > div{min-height:65px;overflow:hidden;border-radius:7px}
 
 /* Responsive navigation and phone layout */
 .site-menu-panel{display:contents}
@@ -984,7 +981,6 @@ section[id], .stats-bar[id], .contact-grid[id]{scroll-margin-block:18vh}
   .login-card h1{font-size:28px}
   .provider-buttons{grid-template-columns:1fr}
   .password-checks{grid-template-columns:1fr}
-  .turnstile-field > div{width:100%;max-width:100%}
 
   .dashboard-main > header{align-items:flex-start;flex-direction:column}
   .admin-email{width:100%;max-width:100%;justify-content:flex-start}

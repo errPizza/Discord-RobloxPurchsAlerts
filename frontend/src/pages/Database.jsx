@@ -12,7 +12,7 @@ export default function Database() {
   const overview = data?.overview || {};
 
   return <>
-    <div className="page-title"><span className="page-eyebrow">Infraestructura</span><h2>DataBase</h2><p>{data?.engine || "Cloudflare D1"}</p></div>
+    <div className="page-title"><span className="page-eyebrow">Infraestructura</span><h2>DataBase</h2><p>{data?.engine || "SQLite local"}</p></div>
     <div className="data-grid">
       <DataCard label="Usuarios" value={overview.users || 0} />
       <DataCard label="Contactos" value={overview.contacts || 0} />

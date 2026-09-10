@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+frontend/node_modules
+frontend/dist
+data
+backups
+coverage
+npm-debug.log*
+.DS_Store

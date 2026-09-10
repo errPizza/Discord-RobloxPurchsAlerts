@@ -35,6 +35,9 @@ export function registerMobileRoutes(app, services) {
   }
 
   function mobileSession(request, reply) {
+    if (!config.mobileAccessTokenSecret || !config.mobileRefreshTokenSecret) {
+      reply.code(503).send({ error: "La autenticación móvil no está configurada." }); return null;
+    }
     const authorization = String(request.headers.authorization || "");
     const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
     const payload = verifyToken(token, config.mobileAccessTokenSecret);
@@ -172,6 +175,18 @@ export function registerMobileRoutes(app, services) {
     if (!permission(request, reply, PERMISSIONS.NGINX_READ)) return;
     return nginxStatus(config);
   });
+  for (const action of ["reload", "restart"]) app.post(`/api/mobile/nginx/${action}`, async (request, reply) => {
+    const identity = permission(request, reply, PERMISSIONS.NGINX_CONTROL); if (!identity) return;
+    if (!requireRateLimit(reply, limiter, `nginx-${action}`, request, 4, 60_000, identity.user.id)) return;
+    try {
+      await hostControl.send(`nginx-${action}`);
+      audit.record({ userId: identity.user.id, mobileSessionId: identity.session.id, deviceName: identity.session.device_name, action: `nginx_${action}`, target: "nginx", result: "success" });
+      return { success: true, accepted: true };
+    } catch (error) {
+      audit.record({ userId: identity.user.id, mobileSessionId: identity.session.id, deviceName: identity.session.device_name, action: `nginx_${action}`, target: "nginx", result: "failure" });
+      return reply.code(503).send({ error: error.message });
+    }
+  });
   app.get("/api/mobile/statistics", async (request, reply) => {
     if (!permission(request, reply, PERMISSIONS.STATS_READ)) return;
     return { analytics: services.stats.analytics(), games: [services.stats.gameAnalytics("Clothing"), services.stats.gameAnalytics("Missile")] };
@@ -201,8 +216,13 @@ export function registerMobileRoutes(app, services) {
     const type = action === "restart" ? "REMOTE_RESTART" : "SERVER_SHUTDOWN";
     const eventId = crypto.randomUUID();
     db.prepare("INSERT INTO server_events (id, type, message, metadata) VALUES (?, ?, ?, ?)").run(eventId, type, `Solicitud remota de ${action}.`, JSON.stringify({ userId: identity.user.id, sessionId: identity.session.id }));
-    audit.record({ userId: identity.user.id, mobileSessionId: identity.session.id, deviceName: identity.session.device_name, action: `server_${action}`, result: "success" });
-    try { await hostControl.send(action); return { success: true, accepted: true }; }
-    catch (error) { audit.record({ userId: identity.user.id, mobileSessionId: identity.session.id, action: `server_${action}`, result: "failure" }); return reply.code(503).send({ error: error.message }); }
+    try {
+      await hostControl.send(action);
+      audit.record({ userId: identity.user.id, mobileSessionId: identity.session.id, deviceName: identity.session.device_name, action: `server_${action}`, result: "success" });
+      return { success: true, accepted: true };
+    } catch (error) {
+      audit.record({ userId: identity.user.id, mobileSessionId: identity.session.id, action: `server_${action}`, result: "failure" });
+      return reply.code(503).send({ error: error.message });
+    }
   });
 }

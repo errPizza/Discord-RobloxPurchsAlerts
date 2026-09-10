@@ -16,6 +16,7 @@ import { createDockerService, createHostControl, systemSnapshot } from "./servic
 import { LocalRateLimiter, clientAddress } from "./services/security.js";
 import { createStatsService } from "./services/stats.js";
 import { syncStaticAssets } from "./services/static-assets.js";
+import { createWeeklySummaryScheduler } from "./services/scheduler.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerMobileRoutes } from "./routes/mobile.js";
@@ -36,6 +37,10 @@ function securityHeaders(request, reply) {
   reply.header("Cross-Origin-Opener-Policy", "same-origin");
   reply.header("Cross-Origin-Resource-Policy", "same-origin");
   reply.header("X-Request-ID", request.agmRequestId);
+  const contentType = String(reply.getHeader("content-type") || "");
+  if (contentType.includes("text/html")) {
+    reply.header("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*.rbxcdn.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; manifest-src 'self'; upgrade-insecure-requests");
+  }
   if (request.protocol === "https") reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 }
 
@@ -69,6 +74,24 @@ function monitorThresholds(db, audit, config) {
   const timer = setInterval(() => check().catch((error) => audit.log({ service: "monitor", level: "ERROR", message: "Falló la comprobación de umbrales.", metadata: { error: error.message } })), 5 * 60_000);
   timer.unref();
   return { check, stop: () => clearInterval(timer) };
+}
+
+function createRetentionScheduler(db, config, audit) {
+  const clean = () => {
+    try {
+      const expiry = Math.floor(Date.now() / 1_000) - config.requestLogRetentionDays * 86_400;
+      db.prepare("DELETE FROM request_logs WHERE created_at < ?").run(expiry);
+      db.prepare("DELETE FROM request_metric_buckets WHERE bucket_start < ?").run(expiry);
+      db.prepare("DELETE FROM application_logs WHERE created_at < ?").run(expiry);
+      db.prepare("DELETE FROM webhook_events WHERE created_at < ?").run(Math.floor(Date.now() / 1_000) - 86_400);
+    } catch (error) {
+      audit.log({ service: "retention", level: "ERROR", message: "Falló la limpieza de retención.", metadata: { error: error.message } });
+    }
+  };
+  clean();
+  const timer = setInterval(clean, 86_400_000);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 export async function buildApp(options = {}) {
@@ -145,9 +168,11 @@ export async function buildApp(options = {}) {
 
   const backupStop = services.backups.schedule();
   const thresholdMonitor = monitorThresholds(db, audit, config);
+  const weeklyScheduler = createWeeklySummaryScheduler({ db, config, stats: services.stats, audit });
+  const retentionStop = createRetentionScheduler(db, config, audit);
   await detectHostRestart(db, audit, config).catch((error) => audit.log({ service: "monitor", level: "ERROR", message: "No fue posible verificar el reinicio del host.", metadata: { error: error.message } }));
   thresholdMonitor.check().catch(() => {});
-  app.addHook("onClose", async () => { backupStop(); thresholdMonitor.stop(); if (!options.db) db.close(); });
+  app.addHook("onClose", async () => { backupStop(); thresholdMonitor.stop(); weeklyScheduler.stop(); retentionStop(); if (!options.db) db.close(); });
   return app;
 }
 
